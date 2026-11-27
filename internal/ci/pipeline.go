@@ -23,9 +23,10 @@ type Job struct {
 // Plan is the pipeline a file would create for one ref. Errors is non-empty when the file is
 // invalid or no job can run as written; Jobs are in stage order, then file order.
 type Plan struct {
-	Errors []string
-	Stages []string
-	Jobs   []Job
+	Errors    []string
+	Stages    []string
+	Jobs      []Job
+	Variables map[string]string // variables: from the file, before predefined ones are added
 }
 
 // BuildPlan expands content into jobs. vars are the predefined variables used by rules:if, only
@@ -53,6 +54,10 @@ func BuildPlan(content string, local LocalFile, vars map[string]string) Plan {
 			env[l.vars.Content[i].Value] = v.Value
 		}
 	}
+	fileVars := map[string]string{}
+	for k, v := range env {
+		fileVars[k] = v
+	}
 	for k, v := range vars {
 		env[k] = v
 	}
@@ -61,13 +66,22 @@ func BuildPlan(content string, local LocalFile, vars map[string]string) Plan {
 	for _, j := range l.jobs {
 		byName[j.name] = j.node
 	}
-	var defaults map[string]any
+	defaults := map[string]any{}
+	for k, n := range l.globs {
+		var v any
+		_ = n.Decode(&v)
+		defaults[k] = v
+	}
 	if l.deflt != nil {
-		_ = l.deflt.Decode(&defaults)
+		var block map[string]any
+		_ = l.deflt.Decode(&block)
+		for k, v := range block {
+			defaults[k] = v
+		}
 	}
 
 	var plan Plan
-	plan.Stages = all
+	plan.Stages, plan.Variables = all, fileVars
 	for _, j := range l.jobs {
 		if strings.HasPrefix(j.name, ".") {
 			continue

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Registers the real gitlab-runner against the image and checks it polls for jobs and gets 204.
+# Registers the real gitlab-runner (shell executor) against the image, runs a two-stage pipeline
+# with an artifact to success, and runs a failing pipeline to failed with the later stage skipped.
 # Needs docker. Usage: tools/runnercheck.sh <image>   (docs/spike-runner.md has the background)
 set -eu
 image=${1:?usage: runnercheck.sh <image>}
@@ -27,3 +28,59 @@ for _ in $(seq 1 60); do
 done
 [ "$polls" -ge 2 ] || { echo "runner did not poll for jobs ($polls polls)"; exit 1; }
 echo "runner registered and polled $polls times"
+
+api() { curl -s -H 'PRIVATE-TOKEN: runnercheck-token' "127.0.0.1:$port/api/v4/projects/100/$1"; }
+# wait_pipeline <ref> <status>: waits for the newest pipeline on ref to reach status, prints its id
+wait_pipeline() {
+	for _ in $(seq 1 90); do
+		out=$(api "pipelines?ref=$1" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(p[0]["id"], p[0]["status"]) if p else print("- none")')
+		[ "${out#* }" = "$2" ] && { echo "${out%% *}"; return 0; }
+		sleep 1
+	done
+	echo "pipeline on $1 did not reach $2 (last: $out)" >&2
+	return 1
+}
+work=$(mktemp -d)
+git clone -q "http://x:runnercheck-token@127.0.0.1:$port/group/project.git" "$work/c"
+push() { # push <branch> <ci file content on stdin>
+	cat >"$work/c/.gitlab-ci.yml"
+	git -C "$work/c" add .gitlab-ci.yml
+	git -c user.name=t -c user.email=t@example.com -C "$work/c" commit -qm "ci for $1"
+	git -C "$work/c" push -q origin "HEAD:refs/heads/$1"
+}
+
+push good <<'YML'
+stages: [build, test]
+compile:
+  stage: build
+  script:
+    - echo "building on $CI_COMMIT_BRANCH"
+    - mkdir out && echo artifact-data > out/a.txt
+  artifacts:
+    paths: [out/]
+unit:
+  stage: test
+  script:
+    - echo "testing sha $CI_COMMIT_SHORT_SHA"
+    - cat out/a.txt
+YML
+pid=$(wait_pipeline good success)
+trace=$(api "jobs/$(api "pipelines/$pid/jobs" | python3 -c 'import json,sys; print([j["id"] for j in json.load(sys.stdin) if j["name"]=="unit"][0])')/trace")
+echo "$trace" | grep -q "artifact-data" || { echo "second job did not see the first job's artifact"; echo "$trace"; exit 1; }
+echo "$trace" | grep -q "testing sha " || { echo "trace lacks the echoed line"; exit 1; }
+echo "two-stage pipeline succeeded, artifact passed between jobs"
+
+push bad <<'YML'
+stages: [build, test]
+broken:
+  stage: build
+  script: [exit 3]
+never:
+  stage: test
+  script: [echo unreachable]
+YML
+pid=$(wait_pipeline bad failed)
+states=$(api "pipelines/$pid/jobs" | python3 -c 'import json,sys; print(",".join(j["name"]+"="+j["status"] for j in json.load(sys.stdin)))')
+[ "$states" = "broken=failed,never=skipped" ] || { echo "unexpected job states: $states"; exit 1; }
+echo "failing pipeline failed and skipped the later stage"
+rm -rf "$work"

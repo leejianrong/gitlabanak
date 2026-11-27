@@ -4,7 +4,7 @@ A small GitLab v4 API stand-in backed by real git repositories, in Go. Target: G
 
 ## Build status
 
-0.4.0 is released: pipelines as data, lint, files, branches, commits, tree, raw, admin API, persistence, and git clone/fetch/push over HTTP. Running jobs (0.5.0) is not built; the runner stub only registers and polls (docs/spike-runner.md). Trust the code over the docs if they disagree, then fix the docs. Error texts in the plan are **unverified** against a real server (ADR-0003); `make conformance` prints how many.
+0.5.0 is released: a real gitlab-runner runs pipelines, pipelines as data, lint, files, branches, commits, tree, raw, admin API, persistence, and git clone/fetch/push over HTTP. The runner API (internal/api/runners.go) accepts any runner token; see docs/spike-runner.md and docs/try-a-pipeline.md. Trust the code over the docs if they disagree, then fix the docs. Error texts in the plan are **unverified** against a real server (ADR-0003); `make conformance` prints how many.
 
 ## Commands
 

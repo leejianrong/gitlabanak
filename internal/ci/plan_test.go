@@ -175,3 +175,16 @@ func TestInvalidRuleExpressionIsALintError(t *testing.T) {
 		t.Errorf("%+v", res)
 	}
 }
+
+func TestTopLevelKeywordsActAsDefaultsAndDefaultBlockWins(t *testing.T) {
+	p := ci.BuildPlan("image: top\nbefore_script: [top-before]\ndefault:\n  image: block\njob:\n  script: [x]\nother:\n  image: own\n  script: [x]\n", nil, vars("main"))
+	if len(p.Errors) != 0 {
+		t.Fatal(p.Errors)
+	}
+	if p.Jobs[0].Config["image"] != "block" || !reflect.DeepEqual(p.Jobs[0].Config["before_script"], []any{"top-before"}) {
+		t.Errorf("job: %v", p.Jobs[0].Config)
+	}
+	if p.Jobs[1].Config["image"] != "own" {
+		t.Errorf("a job's own image must win: %v", p.Jobs[1].Config)
+	}
+}

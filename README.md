@@ -2,7 +2,7 @@
 
 A small GitLab API stand-in backed by real git repositories. Point an application's integration tests at it instead of a full GitLab, with no network and a start time measured in milliseconds.
 
-**Status: 0.4.0.** File, branch and read endpoints work, and `git clone`, `git fetch` and `git push` work over HTTP. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
+**Status: 0.5.0.** File, branch and read endpoints work, and `git clone`, `git fetch` and `git push` work over HTTP. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
 
 ## What works today
 
@@ -20,7 +20,7 @@ A small GitLab API stand-in backed by real git repositories. Point an applicatio
 
 - Pipelines as data: a push, REST commit or new branch with a `.gitlab-ci.yml` creates a pipeline (`GET .../pipelines`, `.../pipelines/:id`, `.../pipelines/:id/jobs`, `POST .../pipeline`). Jobs come out in stage order with `extends`, `default` and simple `rules:if` / `only` / `except` applied, and a file with errors gives a failed pipeline with `yaml_errors`. Nothing runs the jobs yet, and pipelines are not kept across a restart.
 
-Not built yet: running jobs on a runner. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+- Running jobs: a real `gitlab-runner` registers, receives the pending jobs of a pipeline, clones the repository from GitLabAnak, streams a trace (`GET .../jobs/:id/trace`), uploads artifacts and reports success or failure. The pipeline status follows its jobs, and a failure skips later stages. See [Try a pipeline locally](docs/try-a-pipeline.md), which uses [`examples/compose`](examples/compose/compose.yaml). See [`docs/SLICES.md`](docs/SLICES.md) for the order.
 
 ## Lint a pipeline file
 
@@ -29,7 +29,7 @@ No server needed:
 ```sh
 gitlabanak lint .gitlab-ci.yml            # prints findings, exits 1 if any, prints OK and exits 0 otherwise
 gitlabanak lint --json .gitlab-ci.yml     # the same findings as the REST response
-docker run --rm -v "$PWD:/w" ghcr.io/leejianrong/gitlabanak:0.4.0 lint /w/.gitlab-ci.yml
+docker run --rm -v "$PWD:/w" ghcr.io/leejianrong/gitlabanak:0.5.0 lint /w/.gitlab-ci.yml
 ```
 
 `include:local` paths resolve against the file's directory, or `--root`. The messages follow GitLab's wording but are not yet verified against a real server, so treat a clean result as "no obvious mistakes", not as a guarantee GitLab accepts the file.
@@ -62,7 +62,7 @@ print(project.files.get(file_path="a/b.txt", ref="main").decode())
 `make demo` runs a longer version of this against the built binary.
 
 ```sh
-docker run --rm -p 8080:8080 -e GITLAB_PRIVATE_TOKEN=secret ghcr.io/leejianrong/gitlabanak:0.4.0
+docker run --rm -p 8080:8080 -e GITLAB_PRIVATE_TOKEN=secret ghcr.io/leejianrong/gitlabanak:0.5.0
 ```
 
 Then clone, change and push:
@@ -75,7 +75,7 @@ git push origin feature     # now GET /api/v4/projects/100/repository/files/f.tx
 
 ### Using it from your own tests
 
-Pin the image tag, not `latest`, so a new release never changes your results unannounced. Start the container before the tests and point `python-gitlab` at it (or in CI, run it as a service container). `examples/consumer/test_consumer.py` is a runnable example; `make consumer IMAGE=ghcr.io/leejianrong/gitlabanak:0.4.0` runs it against the published image. Call `POST /_admin/reset` between tests to start clean.
+Pin the image tag, not `latest`, so a new release never changes your results unannounced. Start the container before the tests and point `python-gitlab` at it (or in CI, run it as a service container). `examples/consumer/test_consumer.py` is a runnable example; `make consumer IMAGE=ghcr.io/leejianrong/gitlabanak:0.5.0` runs it against the published image. Call `POST /_admin/reset` between tests to start clean.
 
 In the container (non-root, so a new volume at `/data` is writable), keep data across restarts with `-e GITLAB_DATA_DIR=/data -v gitlabanak-data:/data`.
 

@@ -61,3 +61,6 @@ func WritePipelineBase(w http.ResponseWriter, texts ...string) {
 	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string][]string{"base": texts}})
 }
+
+// NotFoundMsg is a 404 with the given message text.
+func NotFoundMsg(text string) Err { return Err{http.StatusNotFound, "message", text} }

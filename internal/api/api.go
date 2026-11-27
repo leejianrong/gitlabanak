@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/leejianrong/gitlabanak/internal/errs"
 	"github.com/leejianrong/gitlabanak/internal/gitstore"
@@ -35,8 +36,10 @@ type ProjectSpec struct {
 // if needed. WipeAll, when set, deletes every stored project (used by reset).
 type Config struct {
 	Token    string
-	Default  ProjectSpec // exists at start and again after reset
-	Extra    []*Project  // already-open projects found on disk at start; reset removes them
+	Default  ProjectSpec      // exists at start and again after reset
+	Extra    []*Project       // already-open projects found on disk at start; reset removes them
+	Now      func() time.Time // for job times; defaults to time.Now
+	NewToken func() string    // for job tokens; defaults to random hex
 	NewStore func(id int, branch string) (*gitstore.Store, error)
 	WipeAll  func() error
 	SavePath func(id int, path string) error // keeps a project's clone path across restarts
@@ -50,11 +53,23 @@ type Server struct {
 	projects map[int]*Project
 
 	pipelineIDs, jobIDs atomic.Int64 // never reset, so ids stay unique across projects and resets
+
+	runMu    sync.Mutex // guards every pipeline's and job's status, trace and artifacts
+	jobIndex map[int]*jobRef
+	now      func() time.Time
+	newToken func() string
+	registry runners
 }
 
 // New returns the full handler. The token guards everything except /health.
 func New(cfg Config) (http.Handler, error) {
-	s := &Server{cfg: cfg}
+	s := &Server{cfg: cfg, now: cfg.Now, newToken: cfg.NewToken}
+	if s.now == nil {
+		s.now = time.Now
+	}
+	if s.newToken == nil {
+		s.newToken = randomToken
+	}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -84,10 +99,17 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("POST /api/v4/runners/verify", s.registerRunner(http.StatusOK))
 	mux.HandleFunc("DELETE /api/v4/runners", s.unregisterRunner)
 	mux.HandleFunc("POST /api/v4/jobs/request", s.requestJob)
+	mux.HandleFunc("PATCH /api/v4/jobs/{jid}/trace", s.patchTrace)
+	mux.HandleFunc("PUT /api/v4/jobs/{jid}", s.updateJob)
+	mux.HandleFunc("POST /api/v4/jobs/{jid}/artifacts", s.uploadArtifacts)
+	mux.HandleFunc("GET /api/v4/jobs/{jid}/artifacts", s.downloadArtifacts)
 	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines", s.listPipelines)
 	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines/{pid}", s.getPipeline)
 	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines/{pid}/jobs", s.pipelineJobs)
 	mux.HandleFunc("POST /api/v4/projects/{id}/pipeline", s.createPipeline)
+	mux.HandleFunc("GET /api/v4/projects/{id}/jobs/{jid}", s.getJob)
+	mux.HandleFunc("GET /api/v4/projects/{id}/jobs/{jid}/trace", s.getTrace)
+	mux.HandleFunc("GET /api/v4/projects/{id}/jobs/{jid}/artifacts", s.getJobArtifacts)
 	mux.HandleFunc("POST /_admin/reset", s.reset)
 	mux.HandleFunc("POST /_admin/projects", s.createProject)
 	mux.HandleFunc("GET /_admin/requests", s.listRequests)
@@ -137,6 +159,9 @@ func (s *Server) validToken(r *http.Request) bool {
 	}
 	if _, pass, ok := r.BasicAuth(); ok { // git: any username, the token as password
 		got = pass
+		if strings.Contains(r.URL.Path, ".git/") && s.runningJobToken(pass) {
+			return true // a runner cloning with gitlab-ci-token:<job token>
+		}
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) == 1
 }
@@ -163,6 +188,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // load builds the start state: just the default project.
 func (s *Server) load() error {
+	s.runMu.Lock()
+	s.jobIndex = map[int]*jobRef{}
+	s.runMu.Unlock()
 	st, err := s.cfg.NewStore(s.cfg.Default.ID, s.cfg.Default.DefaultBranch)
 	if err != nil {
 		return err

@@ -1,0 +1,39 @@
+# GitLabAnak plus a real gitlab-runner that executes the jobs of pipelines pushed to it.
+# The runner uses the Docker executor, so it needs the host's Docker socket. Run: docker compose up -d
+name: gitlabanak-demo
+
+services:
+  gitlabanak:
+    image: ${GITLABANAK_IMAGE:-ghcr.io/leejianrong/gitlabanak:0.5.0}
+    environment:
+      GITLAB_PRIVATE_TOKEN: ${GITLAB_PRIVATE_TOKEN:-secret}
+    ports:
+      - "${GITLABANAK_PORT:-8080}:8080"
+
+  runner-register:
+    image: gitlab/gitlab-runner:latest
+    depends_on: [gitlabanak]
+    restart: "no"
+    volumes:
+      - runner-config:/etc/gitlab-runner
+    # Any token starting with glrt- works: GitLabAnak accepts every runner token.
+    command: >
+      register --non-interactive --url http://gitlabanak:8080 --token glrt-local
+      --name local --executor docker --docker-image alpine:3 --docker-network-mode gitlabanak-demo
+      --docker-pull-policy if-not-present
+
+  runner:
+    image: gitlab/gitlab-runner:latest
+    depends_on:
+      runner-register:
+        condition: service_completed_successfully
+    volumes:
+      - runner-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  runner-config:
+
+networks:
+  default:
+    name: gitlabanak-demo
