@@ -29,8 +29,14 @@ if command -v git >/dev/null; then
 	git -c user.name=t -c user.email=t@example.com -C "$d/c" commit -qm smoke
 	git -C "$d/c" push -q origin HEAD:refs/heads/smoke
 	[ "$(code -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/100/repository/files/f.txt?ref=smoke")" = 200 ] || { echo "pushed file not readable over REST"; exit 1; }
+	printf 'stages: [build, test]\ncompile:\n  stage: build\n  script: [make]\nunit:\n  stage: test\n  needs: [compile]\n  script: [make test]\n' >"$d/c/.gitlab-ci.yml"
+	git -C "$d/c" add .gitlab-ci.yml
+	git -c user.name=t -c user.email=t@example.com -C "$d/c" commit -qm ci
+	git -C "$d/c" push -q origin HEAD:refs/heads/ci
+	pid1=$(curl -s -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/100/pipelines?ref=ci" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert len(p)==1, p; print(p[0]["id"])') || { echo "push did not create one pipeline"; exit 1; }
+	curl -s -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/100/pipelines/$pid1/jobs" | python3 -c 'import json,sys; j=json.load(sys.stdin); assert [x["name"] for x in j]==["compile","unit"] and j[1]["needs"]==["compile"], j' || { echo "pipeline jobs wrong"; exit 1; }
 	rm -rf "$d"
-	echo "git clone and push ok"
+	echo "git clone and push ok, push created a pipeline"
 fi
 f=$(mktemp)
 printf 'stages: [build]\njob:\n  stage: deploy\n  needs: [ghost]\n  script: [x]\n' >"$f"

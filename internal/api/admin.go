@@ -59,7 +59,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.projects[in.ID] = &Project{ID: in.ID, Path: in.Path, DefaultBranch: in.DefaultBranch, Store: st}
+	p := &Project{ID: in.ID, Path: in.Path, DefaultBranch: in.DefaultBranch, Store: st}
+	s.projects[in.ID] = p
+	s.attach(p)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": in.ID, "default_branch": in.DefaultBranch, "path": in.Path})
 }
 
@@ -107,7 +109,29 @@ func (s *Server) state(w http.ResponseWriter, _ *http.Request) {
 			}
 			bs = append(bs, x)
 		}
-		out[strconv.Itoa(p.ID)] = map[string]any{"default_branch": p.DefaultBranch, "branches": bs}
+		type pjob struct {
+			Name   string   `json:"name"`
+			Stage  string   `json:"stage"`
+			Status string   `json:"status"`
+			Needs  []string `json:"needs"`
+		}
+		type pipe struct {
+			ID         int    `json:"id"`
+			Ref        string `json:"ref"`
+			SHA        string `json:"sha"`
+			Status     string `json:"status"`
+			YamlErrors string `json:"yaml_errors,omitempty"`
+			Jobs       []pjob `json:"jobs"`
+		}
+		pipes := []pipe{}
+		for _, pl := range p.pipes.snapshot() {
+			x := pipe{ID: pl.ID, Ref: pl.Ref, SHA: pl.SHA, Status: pl.Status, YamlErrors: pl.YamlErrors, Jobs: []pjob{}}
+			for _, j := range pl.Jobs {
+				x.Jobs = append(x.Jobs, pjob{j.Name, j.Stage, j.Status, append([]string{}, j.Needs...)})
+			}
+			pipes = append(pipes, x)
+		}
+		out[strconv.Itoa(p.ID)] = map[string]any{"default_branch": p.DefaultBranch, "branches": bs, "pipelines": pipes}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"projects": out})
 }

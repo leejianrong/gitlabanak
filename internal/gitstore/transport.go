@@ -67,26 +67,35 @@ func (s *Store) Advertise(service string, w io.Writer) error {
 // Serve answers POST <service> for smart HTTP: it reads the request from r and writes the
 // response to w. The response is built in memory so no repository access outlives the lock.
 func (s *Store) Serve(ctx context.Context, service string, r io.Reader, w io.Writer) error {
+	out, changes, err := s.serve(ctx, service, r)
+	s.notify(changes...) // before the reply, so a client that sees the push succeed can already see its effects
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(out)
+	return err
+}
+
+func (s *Store) serve(ctx context.Context, service string, r io.Reader) ([]byte, []RefChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ep, err := s.sessionEndpoint()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var out bytes.Buffer
+	var changes []RefChange
 	switch service {
 	case UploadPack:
 		err = s.uploadPack(ctx, t, ep, r, &out)
 	case ReceivePack:
+		before := s.refHeads()
 		err = s.receivePack(ctx, t, ep, r, &out)
+		changes = diffRefs(before, s.refHeads())
 	default:
 		err = fmt.Errorf("unknown service %q", service)
 	}
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(out.Bytes())
-	return err
+	return out.Bytes(), changes, err
 }
 
 func (s *Store) uploadPack(ctx context.Context, t transport.Transport, ep *transport.Endpoint, r io.Reader, w io.Writer) error {

@@ -74,3 +74,20 @@ def test_ci_lint(project):
     bad = project.ci_lint.create({"content": "build:\n  stage: nope\n  script: [echo hi]\n"})
     assert not bad.valid
     assert any("stage" in e for e in bad.errors)
+
+
+def test_pipelines_and_jobs(project, default_branch, uid, cleanup):
+    ci = "stages: [build, test]\ncompile:\n  stage: build\n  script: [echo build]\nunit:\n  stage: test\n  needs: [compile]\n  script: [echo test]\n"
+    project.files.create({"file_path": ".gitlab-ci.yml", "branch": default_branch, "content": ci, "commit_message": f"ci {uid}"})
+    cleanup.append(lambda p: p.files.delete(".gitlab-ci.yml", default_branch, "cleanup"))
+    sha = project.commits.list(ref_name=default_branch, per_page=1, get_all=False)[0].id
+
+    pipeline = next(p for p in project.pipelines.list(ref=default_branch, get_all=True) if p.sha == sha)
+    assert pipeline.status in ("created", "pending", "running")
+    assert project.pipelines.get(pipeline.id).sha == sha
+
+    jobs = pipeline.jobs.list(get_all=True)
+    assert [(j.stage, j.name) for j in jobs] == [("build", "compile"), ("test", "unit")]
+
+    created = project.pipelines.create({"ref": default_branch})
+    assert created.sha == sha and created.id != pipeline.id

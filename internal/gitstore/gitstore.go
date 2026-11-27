@@ -80,6 +80,7 @@ type BranchState struct {
 type Store struct {
 	mu   sync.Mutex // go-git's memory storage is not safe for concurrent use
 	repo *git.Repository
+	hook func(RefChange) // see OnRefUpdate
 }
 
 // New creates an in-memory bare repository whose default branch holds one empty-tree commit.
@@ -233,9 +234,9 @@ func (s *Store) branch(name string) (Branch, error) {
 	return Branch{Name: name, CommitID: c.Hash.String(), Message: c.Message}, nil
 }
 
-// CreateBranch points a new branch at ref, which may be a branch, tag or commit sha.
+// createBranch points a new branch at ref, which may be a branch, tag or commit sha.
 // The new branch sees the files ref had, and later commits on either stay separate.
-func (s *Store) CreateBranch(name, ref string) (Branch, error) {
+func (s *Store) createBranch(name, ref string) (Branch, error) {
 	refName := plumbing.NewBranchReferenceName(name)
 	if name == "" || refName.Validate() != nil {
 		return Branch{}, ErrInvalidBranch
@@ -255,8 +256,8 @@ func (s *Store) CreateBranch(name, ref string) (Branch, error) {
 	return s.branch(name)
 }
 
-// Commit applies one change on branch and returns the new commit id.
-func (s *Store) Commit(branch string, c Change) (string, error) {
+// commit applies one change on branch and returns the new commit id.
+func (s *Store) commit(branch string, c Change) (string, error) {
 	parts := strings.Split(c.Path, "/")
 	for _, p := range parts {
 		if p == "" || p == "." || p == ".." {

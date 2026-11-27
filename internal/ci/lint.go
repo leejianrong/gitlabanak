@@ -48,6 +48,8 @@ type linter struct {
 	jobs  []job // in file order, includes after the including file
 	stage []string
 	seen  map[string]bool // top-level keys already taken, so the including file wins
+	deflt *yaml.Node      // the default: block
+	vars  *yaml.Node      // the top-level variables: block
 }
 
 type job struct {
@@ -57,19 +59,26 @@ type job struct {
 
 // Lint checks content. local resolves include:local; nil means no files exist.
 func Lint(content string, local LocalFile) Result {
+	l := parse(content, local)
+	return l.result()
+}
+
+// parse reads content and its local includes and runs every lint rule. Its findings are in
+// l.res; the loaded jobs are only meaningful when there are no errors.
+func parse(content string, local LocalFile) *linter {
 	l := &linter{local: local, seen: map[string]bool{}}
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		l.errorf("(<unknown>): %s", strings.TrimPrefix(err.Error(), "yaml: "))
-		return l.result()
+		return l
 	}
 	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
 		l.errorf("Invalid configuration format")
-		return l.result()
+		return l
 	}
 	l.load(root.Content[0], nil, 0)
 	l.check()
-	return l.result()
+	return l
 }
 
 func (l *linter) result() Result {
@@ -110,6 +119,12 @@ func (l *linter) load(m *yaml.Node, stack []string, depth int) {
 			l.seen[k] = true
 		case reserved[k]:
 			l.seen[k] = true
+			switch k {
+			case "default":
+				l.deflt = v
+			case "variables":
+				l.vars = v
+			}
 		default:
 			l.seen[k] = true
 			l.jobs = append(l.jobs, job{k, v})
@@ -231,6 +246,15 @@ func (l *linter) checkJob(j job, byName map[string]*yaml.Node, stages []string) 
 		}
 		if !slices.Contains(stages, stage) {
 			l.errorf("jobs:%s chosen stage does not exist; available stages are %s", j.name, strings.Join(stages, ", "))
+		}
+	}
+	if rules := value(j.node, "rules"); rules != nil {
+		for _, r := range rules.Content {
+			if cond := value(r, "if"); cond != nil {
+				if _, err := Compile(cond.Value); err != nil {
+					l.errorf("jobs:%s:rules:rule if invalid expression syntax", j.name)
+				}
+			}
 		}
 	}
 	if needs := value(j.node, "needs"); needs != nil {

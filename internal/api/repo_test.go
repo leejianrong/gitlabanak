@@ -159,3 +159,7 @@ func TestRawFileReturnsTheExactBytes(t *testing.T) {
 		t.Fatalf("missing raw file: %d", code)
 	}
 }
+
+func changeOf(path, content string) gitstore.Change {
+	return gitstore.Change{Op: gitstore.Update, Path: path, Content: []byte(content), Message: "update " + path}
+}

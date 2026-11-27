@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/leejianrong/gitlabanak/internal/errs"
 	"github.com/leejianrong/gitlabanak/internal/gitstore"
@@ -21,6 +22,7 @@ type Project struct {
 	Path          string // namespace/name, used in clone URLs
 	DefaultBranch string
 	Store         *gitstore.Store
+	pipes         pipelines
 }
 
 type ProjectSpec struct {
@@ -46,6 +48,8 @@ type Server struct {
 
 	mu       sync.RWMutex
 	projects map[int]*Project
+
+	pipelineIDs, jobIDs atomic.Int64 // never reset, so ids stay unique across projects and resets
 }
 
 // New returns the full handler. The token guards everything except /health.
@@ -56,6 +60,7 @@ func New(cfg Config) (http.Handler, error) {
 	}
 	for _, p := range cfg.Extra {
 		s.projects[p.ID] = p
+		s.attach(p)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -79,6 +84,10 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("POST /api/v4/runners/verify", s.registerRunner(http.StatusOK))
 	mux.HandleFunc("DELETE /api/v4/runners", s.unregisterRunner)
 	mux.HandleFunc("POST /api/v4/jobs/request", s.requestJob)
+	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines", s.listPipelines)
+	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines/{pid}", s.getPipeline)
+	mux.HandleFunc("GET /api/v4/projects/{id}/pipelines/{pid}/jobs", s.pipelineJobs)
+	mux.HandleFunc("POST /api/v4/projects/{id}/pipeline", s.createPipeline)
 	mux.HandleFunc("POST /_admin/reset", s.reset)
 	mux.HandleFunc("POST /_admin/projects", s.createProject)
 	mux.HandleFunc("GET /_admin/requests", s.listRequests)
@@ -158,6 +167,8 @@ func (s *Server) load() error {
 	if err != nil {
 		return err
 	}
-	s.projects = map[int]*Project{s.cfg.Default.ID: {ID: s.cfg.Default.ID, Path: s.cfg.Default.Path, DefaultBranch: s.cfg.Default.DefaultBranch, Store: st}}
+	p := &Project{ID: s.cfg.Default.ID, Path: s.cfg.Default.Path, DefaultBranch: s.cfg.Default.DefaultBranch, Store: st}
+	s.projects = map[int]*Project{p.ID: p}
+	s.attach(p)
 	return nil
 }
