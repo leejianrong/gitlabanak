@@ -3,6 +3,7 @@ package gitstore
 import (
 	"errors"
 	"os/exec"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -314,5 +315,42 @@ func TestOnDiskRepositoryPassesGitFsck(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
+	}
+}
+
+func TestOnRefUpdateFiresAfterCommitAndBranchCreationAndMayReadTheStore(t *testing.T) {
+	s, err := New("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []RefChange
+	s.OnRefUpdate(func(c RefChange) {
+		if _, err := s.Read(c.SHA, "f"); err != nil && c.Ref == "refs/heads/main" { // would deadlock if run under the lock
+			t.Errorf("read inside hook: %v", err)
+		}
+		got = append(got, c)
+	})
+	id, err := s.Commit("main", Change{Op: Create, Path: "f", Content: []byte("x"), Message: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateBranch("feat", "main"); err != nil {
+		t.Fatal(err)
+	}
+	want := []RefChange{{"refs/heads/main", id}, {"refs/heads/feat", id}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if _, err := s.Commit("nope", Change{Op: Create, Path: "g", Message: "m"}); err == nil || len(got) != 2 {
+		t.Fatalf("a failed commit must not fire the hook (err=%v, fired %d)", err, len(got))
+	}
+}
+
+func TestDiffRefsIgnoresDeletesAndUnchanged(t *testing.T) {
+	before := map[string]string{"refs/heads/a": "1", "refs/heads/b": "2", "refs/heads/gone": "3"}
+	after := map[string]string{"refs/heads/a": "1", "refs/heads/b": "9", "refs/tags/t": "4"}
+	want := []RefChange{{"refs/heads/b", "9"}, {"refs/tags/t", "4"}}
+	if got := diffRefs(before, after); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
