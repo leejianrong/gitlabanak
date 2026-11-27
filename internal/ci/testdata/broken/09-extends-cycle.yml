@@ -1,0 +1,8 @@
+# want: jobs:a extends: circular dependency detected
+# want: jobs:b extends: circular dependency detected
+a:
+  extends: b
+  script: [x]
+b:
+  extends: a
+  script: [x]

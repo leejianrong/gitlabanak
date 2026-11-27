@@ -1,0 +1,7 @@
+# want: jobs:first config contains unknown keys: nope
+# want: jobs:second config should implement the script:, run:, or trigger: keyword
+first:
+  nope: 1
+  script: [x]
+second:
+  stage: test

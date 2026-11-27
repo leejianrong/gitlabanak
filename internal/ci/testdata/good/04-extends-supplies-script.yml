@@ -1,0 +1,5 @@
+.base:
+  script: [echo base]
+job:
+  extends: .base
+  variables: {A: "1"}

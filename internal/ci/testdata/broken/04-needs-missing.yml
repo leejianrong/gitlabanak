@@ -1,0 +1,4 @@
+# want: 'test' job needs 'build' job, but 'build' does not exist in the pipeline
+test:
+  needs: [build]
+  script: [x]

@@ -1,0 +1,5 @@
+# want: jobs:deploy chosen stage does not exist; available stages are .pre, build, test, .post
+stages: [build, test]
+deploy:
+  stage: deploy
+  script: [x]

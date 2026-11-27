@@ -65,3 +65,12 @@ def test_commits_tree_and_raw(project, default_branch, uid, cleanup):
     names = [e["path"] for e in project.repository_tree(path="conformance", ref=default_branch, get_all=True)]
     assert path in names
     assert project.files.raw(file_path=path, ref=default_branch) == b"raw bytes\n"
+
+
+def test_ci_lint(project):
+    ok = project.ci_lint.create({"content": "build:\n  script: [echo hi]\n"})
+    assert ok.valid and not ok.errors
+
+    bad = project.ci_lint.create({"content": "build:\n  stage: nope\n  script: [echo hi]\n"})
+    assert not bad.valid
+    assert any("stage" in e for e in bad.errors)

@@ -2,7 +2,7 @@
 
 A small GitLab API stand-in backed by real git repositories. Point an application's integration tests at it instead of a full GitLab, with no network and a start time measured in milliseconds.
 
-**Status: 0.2.0.** File, branch and read endpoints work, and `git clone`, `git fetch` and `git push` work over HTTP. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
+**Status: 0.3.0.** File, branch and read endpoints work, and `git clone`, `git fetch` and `git push` work over HTTP. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
 
 ## What works today
 
@@ -16,7 +16,21 @@ A small GitLab API stand-in backed by real git repositories. Point an applicatio
 - Test helpers under `/_admin` (same token): `POST /_admin/reset`, `POST /_admin/projects` (`{"id": 101, "default_branch": "main"}`), `GET /_admin/requests` (what clients sent, token redacted), `GET /_admin/state` (branches, commits and files).
 - Any other route answers `501 not implemented` and appears in the request log, so you can see what a client needs that is missing.
 
-Not built yet: CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+- CI lint: `POST /api/v4/projects/:id/ci/lint` (body `content`, optional `ref` for `include:local`), `GET /api/v4/projects/:id/ci/lint` (the repository's own `.gitlab-ci.yml`, `content_ref`) and `POST /api/v4/ci/lint`. Checks unknown job keys, missing `script`, undefined `stage`, `needs` on a missing job, bad `extends`, and `include:local` files that do not exist. `include:remote`, `project` and `template` are skipped with a warning.
+
+Not built yet: pipelines and running jobs. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+
+## Lint a pipeline file
+
+No server needed:
+
+```sh
+gitlabanak lint .gitlab-ci.yml            # prints findings, exits 1 if any, prints OK and exits 0 otherwise
+gitlabanak lint --json .gitlab-ci.yml     # the same findings as the REST response
+docker run --rm -v "$PWD:/w" ghcr.io/leejianrong/gitlabanak:0.3.0 lint /w/.gitlab-ci.yml
+```
+
+`include:local` paths resolve against the file's directory, or `--root`. The messages follow GitLab's wording but are not yet verified against a real server, so treat a clean result as "no obvious mistakes", not as a guarantee GitLab accepts the file.
 
 ## Run it
 

@@ -1,0 +1,4 @@
+# want: jobs:build config contains unknown keys: scrpit
+build:
+  scrpit: [echo]
+  script: [echo]

@@ -1,0 +1,4 @@
+# want: Local file `/ci/nope.yml` does not exist!
+include: /ci/nope.yml
+job:
+  script: [x]

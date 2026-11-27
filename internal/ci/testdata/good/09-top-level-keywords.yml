@@ -1,0 +1,14 @@
+image: alpine
+variables: {X: "1"}
+default:
+  before_script: [echo]
+workflow:
+  rules:
+    - if: "$CI_COMMIT_BRANCH"
+job:
+  script: [x]
+  image: busybox
+  rules:
+    - if: "$CI_COMMIT_BRANCH == \"main\""
+  artifacts: {paths: [out/]}
+  cache: {key: k, paths: [.cache]}

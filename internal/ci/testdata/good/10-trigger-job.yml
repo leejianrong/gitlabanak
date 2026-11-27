@@ -1,0 +1,3 @@
+downstream:
+  trigger:
+    project: group/other

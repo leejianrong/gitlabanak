@@ -1,0 +1,4 @@
+# want: jobs config should contain at least one visible job
+stages: [build]
+.hidden:
+  script: [x]

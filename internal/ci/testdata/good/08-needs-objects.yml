@@ -1,0 +1,8 @@
+a:
+  script: [a]
+b:
+  needs:
+    - job: a
+      artifacts: true
+    - {job: other, project: group/proj, ref: main}
+  script: [b]

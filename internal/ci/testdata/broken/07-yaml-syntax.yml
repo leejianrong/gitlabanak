@@ -1,0 +1,4 @@
+# want: (<unknown>): line 1: did not find expected key
+job:
+  script: [x]
+ bad: indent
