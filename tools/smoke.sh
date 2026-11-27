@@ -20,4 +20,16 @@ code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 [ "$(code "127.0.0.1:$port/api/v4/projects/100")" = 401 ] || { echo "expected 401 without token"; exit 1; }
 [ "$(code -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/100")" = 200 ] || { echo "expected 200 for project 100"; exit 1; }
 [ "$(code -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/7")" = 404 ] || { echo "expected 404 for project 7"; exit 1; }
+if command -v git >/dev/null; then
+	d=$(mktemp -d)
+	url="http://x:t0k@127.0.0.1:$port/group/project.git"
+	git clone -q "$url" "$d/c"
+	echo hi >"$d/c/f.txt"
+	git -C "$d/c" add f.txt
+	git -c user.name=t -c user.email=t@example.com -C "$d/c" commit -qm smoke
+	git -C "$d/c" push -q origin HEAD:refs/heads/smoke
+	[ "$(code -H 'PRIVATE-TOKEN: t0k' "127.0.0.1:$port/api/v4/projects/100/repository/files/f.txt?ref=smoke")" = 200 ] || { echo "pushed file not readable over REST"; exit 1; }
+	rm -rf "$d"
+	echo "git clone and push ok"
+fi
 echo "smoke ok"

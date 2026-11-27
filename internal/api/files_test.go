@@ -16,7 +16,7 @@ func fileServer(t *testing.T) (*httptest.Server, *gitstore.Store) {
 	var st *gitstore.Store
 	h, err := New(Config{
 		Token:   token,
-		Default: ProjectSpec{ID: 100, DefaultBranch: "main"},
+		Default: ProjectSpec{ID: 100, Path: "group/project", DefaultBranch: "main"},
 		NewStore: func(_ int, branch string) (*gitstore.Store, error) {
 			var err error
 			st, err = gitstore.New(branch)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/leejianrong/gitlabanak/internal/errs"
 	"github.com/leejianrong/gitlabanak/internal/gitstore"
@@ -87,7 +88,12 @@ func (s *Server) getFile(w http.ResponseWriter, r *http.Request) {
 		errs.RefMissing.Write(w)
 		return
 	}
-	f, err := p.Store.Read(ref, r.PathValue("path"))
+	filePath, raw := strings.CutSuffix(r.PathValue("path"), "/raw")
+	if raw {
+		s.rawFile(w, p, ref, filePath)
+		return
+	}
+	f, err := p.Store.Read(ref, filePath)
 	switch {
 	case errors.Is(err, gitstore.ErrNotFound), errors.Is(err, gitstore.ErrRefNotFound):
 		errs.FileNotFound.Write(w)
