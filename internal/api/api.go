@@ -75,6 +75,10 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("POST /api/v4/ci/lint", s.lintInstance)
 	mux.HandleFunc("POST /api/v4/projects/{id}/ci/lint", s.lintProject)
 	mux.HandleFunc("GET /api/v4/projects/{id}/ci/lint", s.lintRepoFile)
+	mux.HandleFunc("POST /api/v4/runners", s.registerRunner(http.StatusCreated))
+	mux.HandleFunc("POST /api/v4/runners/verify", s.registerRunner(http.StatusOK))
+	mux.HandleFunc("DELETE /api/v4/runners", s.unregisterRunner)
+	mux.HandleFunc("POST /api/v4/jobs/request", s.requestJob)
 	mux.HandleFunc("POST /_admin/reset", s.reset)
 	mux.HandleFunc("POST /_admin/projects", s.createProject)
 	mux.HandleFunc("GET /_admin/requests", s.listRequests)
@@ -108,7 +112,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" && !s.validToken(r) {
+		if r.URL.Path != "/health" && !isRunnerRoute(r.URL.Path) && !s.validToken(r) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitLab"`) // git only sends credentials after a challenge
 			errs.Unauthorized.Write(w)
 			return

@@ -4,7 +4,7 @@ A small GitLab v4 API stand-in backed by real git repositories, in Go. Target: G
 
 ## Build status
 
-0.2.0 is released: files, branches, commits, tree, raw, admin API, persistence, and git clone/fetch/push over HTTP. CI lint and pipelines (0.3.0 onward) are not built. Trust the code over the docs if they disagree, then fix the docs. Error texts in the plan are **unverified** against a real server (ADR-0003); `make conformance` prints how many.
+0.3.0 is released: lint, files, branches, commits, tree, raw, admin API, persistence, and git clone/fetch/push over HTTP. Pipelines and running jobs (0.4.0 onward) are not built; the runner stub only registers and polls (docs/spike-runner.md). Trust the code over the docs if they disagree, then fix the docs. Error texts in the plan are **unverified** against a real server (ADR-0003); `make conformance` prints how many.
 
 ## Commands
 

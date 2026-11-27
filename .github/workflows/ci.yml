@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
       - run: pipx install uv
-      - run: make imagecheck conformance consumer IMAGE=gitlabanak:ci
+      - run: make imagecheck conformance consumer runnercheck IMAGE=gitlabanak:ci
       # builds both architectures without pushing, so an arm64 problem shows up in the PR
       - run: docker buildx build --platform linux/amd64,linux/arm64 .
 
