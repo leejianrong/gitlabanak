@@ -12,7 +12,7 @@ The service must answer `/health` in under 2 s, ship in an image under 50 MB, ru
 
 - Go, one static binary (`CGO_ENABLED=0`), image `FROM scratch` plus CA certificates only if a later feature needs outbound TLS.
 - HTTP uses `net/http` and its pattern mux, JSON uses `encoding/json`.
-- Third-party code is limited to `github.com/go-git/go-git/v5` (Apache-2.0, pure Go, ADR-0002) and `gopkg.in/yaml.v3` (MIT/Apache-2.0, needed from 0.3.0 for `.gitlab-ci.yml`). Adding a third dependency needs a new ADR.
+- Third-party code is limited to `github.com/go-git/go-git/v5` and its sibling `go-billy` (both Apache-2.0, pure Go, ADR-0002; billy is the filesystem layer go-git needs for on-disk storage) and `gopkg.in/yaml.v3` (MIT/Apache-2.0, needed from 0.3.0 for `.gitlab-ci.yml`). Adding a third dependency needs a new ADR.
 - The conformance suite is Python (ADR-0003). That is test code and is not in the image.
 
 ## Alternatives considered

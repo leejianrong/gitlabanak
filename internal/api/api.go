@@ -22,21 +22,37 @@ type Project struct {
 	Store         *gitstore.Store
 }
 
+type ProjectSpec struct {
+	ID            int
+	DefaultBranch string
+}
+
+// Config describes a server. NewStore must return the store for a project, creating it
+// if needed. WipeAll, when set, deletes every stored project (used by reset).
+type Config struct {
+	Token    string
+	Default  ProjectSpec // exists at start and again after reset
+	Extra    []*Project  // already-open projects found on disk at start; reset removes them
+	NewStore func(id int, branch string) (*gitstore.Store, error)
+	WipeAll  func() error
+}
+
 type Server struct {
-	token   string
-	initial []Project // what reset rebuilds
-	log     requestLog
+	cfg Config
+	log requestLog
 
 	mu       sync.RWMutex
 	projects map[int]*Project
 }
 
-// New returns the full handler. Token guards everything except /health.
-func New(token string, projects ...*Project) http.Handler {
-	s := &Server{token: token, projects: map[int]*Project{}}
-	for _, p := range projects {
+// New returns the full handler. The token guards everything except /health.
+func New(cfg Config) (http.Handler, error) {
+	s := &Server{cfg: cfg}
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+	for _, p := range cfg.Extra {
 		s.projects[p.ID] = p
-		s.initial = append(s.initial, Project{ID: p.ID, DefaultBranch: p.DefaultBranch})
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -56,7 +72,7 @@ func New(token string, projects ...*Project) http.Handler {
 	mux.HandleFunc("GET /_admin/state", s.state)
 	// Anything else is an endpoint we have not built. Say so, and the request log shows who called it.
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { errs.NotImplemented.Write(w) })
-	return recoverPanics(s.record(s.auth(mux)))
+	return recoverPanics(s.record(s.auth(mux))), nil
 }
 
 func (s *Server) project(w http.ResponseWriter, r *http.Request) *Project {
@@ -92,7 +108,7 @@ func (s *Server) validToken(r *http.Request) bool {
 	if got == "" {
 		got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) == 1
 }
 
 // recoverPanics keeps one bad request from taking the server down. Version 0.2.0
@@ -113,4 +129,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// load builds the start state: just the default project.
+func (s *Server) load() error {
+	st, err := s.cfg.NewStore(s.cfg.Default.ID, s.cfg.Default.DefaultBranch)
+	if err != nil {
+		return err
+	}
+	s.projects = map[int]*Project{s.cfg.Default.ID: {ID: s.cfg.Default.ID, DefaultBranch: s.cfg.Default.DefaultBranch, Store: st}}
+	return nil
 }

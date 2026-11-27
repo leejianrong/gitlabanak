@@ -9,13 +9,24 @@ import (
 
 var auth = map[string]string{"PRIVATE-TOKEN": token}
 
+// fileServer starts a server with project 100 on main and returns the store behind it,
+// so tests can commit directly. After an admin reset the returned store is stale.
 func fileServer(t *testing.T) (*httptest.Server, *gitstore.Store) {
 	t.Helper()
-	st, err := gitstore.New("main")
+	var st *gitstore.Store
+	h, err := New(Config{
+		Token:   token,
+		Default: ProjectSpec{ID: 100, DefaultBranch: "main"},
+		NewStore: func(_ int, branch string) (*gitstore.Store, error) {
+			var err error
+			st, err = gitstore.New(branch)
+			return st, err
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(New(token, &Project{ID: 100, DefaultBranch: "main", Store: st}))
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv, st
 }
