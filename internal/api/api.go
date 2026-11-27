@@ -42,6 +42,8 @@ func New(token string, projects ...*Project) http.Handler {
 	mux.HandleFunc("POST "+files, s.changeFile(gitstore.Create))
 	mux.HandleFunc("PUT "+files, s.changeFile(gitstore.Update))
 	mux.HandleFunc("DELETE "+files, s.changeFile(gitstore.Delete))
+	mux.HandleFunc("GET /api/v4/projects/{id}/repository/branches/{name...}", s.getBranch)
+	mux.HandleFunc("POST /api/v4/projects/{id}/repository/branches", s.createBranch)
 	return recoverPanics(s.auth(mux))
 }
 
