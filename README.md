@@ -2,7 +2,7 @@
 
 A small GitLab API stand-in backed by real git repositories. Point an application's integration tests at it instead of a full GitLab, with no network and a start time measured in milliseconds.
 
-**Status: 0.1.0.** The file and branch endpoints work. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
+**Status: 0.1.x, heading to 0.2.0.** File, branch and read endpoints work, and `git clone`, `git fetch` and `git push` work over HTTP. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
 
 ## What works today
 
@@ -10,11 +10,13 @@ A small GitLab API stand-in backed by real git repositories. Point an applicatio
 - `GET /api/v4/projects/:id`
 - Repository files on any branch: read, create, update and delete, through `python-gitlab` or plain HTTP.
 - Branches: create from a branch, tag or commit sha, and look one up. A new branch starts as a copy of its `ref`, and a commit on one branch leaves the others alone.
+- `git clone http://x:<token>@localhost:8080/group/project.git`, then commit and push, including new branches and branch deletes. Any username works, the token is the password. Each project has a clone path: `group/project` for the default one, `group/project-<id>` or the `path` given to `POST /_admin/projects` for others. Commits made through the REST API show up on the next `git fetch` with the same ids.
+- Read endpoints: `GET .../repository/commits` (`ref_name`, `page`, `per_page`), `.../commits/:sha`, `.../repository/tree` (`path`, `ref`, `recursive`) and `.../files/:path/raw`.
 - Every change is a real git commit. Commit ids are deterministic: the same requests in the same order give the same ids on a fresh server.
 - Test helpers under `/_admin` (same token): `POST /_admin/reset`, `POST /_admin/projects` (`{"id": 101, "default_branch": "main"}`), `GET /_admin/requests` (what clients sent, token redacted), `GET /_admin/state` (branches, commits and files).
 - Any other route answers `501 not implemented` and appears in the request log, so you can see what a client needs that is missing.
 
-Not built yet: clone and push, CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+Not built yet: CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
 
 ## Run it
 
@@ -27,6 +29,7 @@ GITLAB_PRIVATE_TOKEN=secret bin/gitlabanak        # listens on :8080
 |---|---|---|
 | `GITLAB_PRIVATE_TOKEN` | required | Sent by clients as `PRIVATE-TOKEN` (or `Authorization: Bearer`) |
 | `GITLAB_DEFAULT_PROJECT_ID` | `100` | The one project that exists at start |
+| `GITLAB_DEFAULT_PROJECT_PATH` | `group/project` | Clone path of the default project |
 | `GITLAB_DEFAULT_BRANCH` | `main` | |
 | `GITLAB_DATA_DIR` | unset | If set, projects are kept as bare git repositories under `<dir>/projects/` and reopened at start. Unset means memory only, nothing written to disk |
 | `LISTEN_ADDR` | `:8080` | |

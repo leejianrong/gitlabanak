@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -29,6 +30,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ID            int    `json:"id"`
 		DefaultBranch string `json:"default_branch"`
+		Path          string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.ID <= 0 {
 		errs.BadRequest("id must be a positive integer").Write(w)
@@ -36,6 +38,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.DefaultBranch == "" {
 		in.DefaultBranch = "main"
+	}
+	if in.Path == "" {
+		in.Path = fmt.Sprintf("group/project-%d", in.ID)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,8 +53,14 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		errs.Internal(err.Error()).Write(w)
 		return
 	}
-	s.projects[in.ID] = &Project{ID: in.ID, DefaultBranch: in.DefaultBranch, Store: st}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": in.ID, "default_branch": in.DefaultBranch})
+	if s.cfg.SavePath != nil {
+		if err := s.cfg.SavePath(in.ID, in.Path); err != nil {
+			errs.Internal(err.Error()).Write(w)
+			return
+		}
+	}
+	s.projects[in.ID] = &Project{ID: in.ID, Path: in.Path, DefaultBranch: in.DefaultBranch, Store: st}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": in.ID, "default_branch": in.DefaultBranch, "path": in.Path})
 }
 
 func (s *Server) listRequests(w http.ResponseWriter, _ *http.Request) {

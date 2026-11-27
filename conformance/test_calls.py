@@ -47,3 +47,21 @@ def test_branch_create_get_and_isolation(project, default_branch, uid, cleanup):
     with pytest.raises(exceptions.GitlabCreateError) as err:
         project.branches.create({"branch": name, "ref": default_branch})
     assert "already exists" in err.value.error_message
+
+
+def test_commits_tree_and_raw(project, default_branch, uid, cleanup):
+    path = f"conformance/{uid}-read.txt"
+    project.files.create({"file_path": path, "branch": default_branch, "content": "raw bytes\n", "commit_message": f"read {uid}"})
+    cleanup.append(lambda p: p.files.delete(path, default_branch, "cleanup"))
+
+    newest = project.commits.list(ref_name=default_branch, per_page=1, get_all=False)[0]
+    assert newest.title == f"read {uid}"
+    assert len(newest.id) == 40 and newest.short_id and newest.parent_ids
+    assert project.commits.get(newest.id).id == newest.id
+    with pytest.raises(exceptions.GitlabGetError) as err:
+        project.commits.get("0" * 40)
+    assert err.value.response_code == 404
+
+    names = [e["path"] for e in project.repository_tree(path="conformance", ref=default_branch, get_all=True)]
+    assert path in names
+    assert project.files.raw(file_path=path, ref=default_branch) == b"raw bytes\n"

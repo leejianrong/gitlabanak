@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -40,7 +41,7 @@ func run() error {
 	branch := env("GITLAB_DEFAULT_BRANCH", "main")
 	cfg := api.Config{
 		Token:    token,
-		Default:  api.ProjectSpec{ID: id, DefaultBranch: branch},
+		Default:  api.ProjectSpec{ID: id, Path: env("GITLAB_DEFAULT_PROJECT_PATH", "group/project"), DefaultBranch: branch},
 		NewStore: func(_ int, branch string) (*gitstore.Store, error) { return gitstore.New(branch) },
 	}
 	if dir := os.Getenv("GITLAB_DATA_DIR"); dir != "" {
@@ -71,6 +72,13 @@ func persist(cfg *api.Config, root string) error {
 	path := func(id int) string { return filepath.Join(root, strconv.Itoa(id)+".git") }
 	cfg.NewStore = func(id int, branch string) (*gitstore.Store, error) { return gitstore.Open(path(id), branch) }
 	cfg.WipeAll = func() error { return os.RemoveAll(root) }
+	sidecar := func(id int) string { return filepath.Join(root, strconv.Itoa(id)+".path") }
+	cfg.SavePath = func(id int, p string) error {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(sidecar(id), []byte(p), 0o644)
+	}
 
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -92,7 +100,11 @@ func persist(cfg *api.Config, root string) error {
 		if err != nil {
 			return err
 		}
-		cfg.Extra = append(cfg.Extra, &api.Project{ID: id, DefaultBranch: b, Store: st})
+		clonePath := fmt.Sprintf("group/project-%d", id)
+		if saved, err := os.ReadFile(sidecar(id)); err == nil {
+			clonePath = string(saved)
+		}
+		cfg.Extra = append(cfg.Extra, &api.Project{ID: id, Path: clonePath, DefaultBranch: b, Store: st})
 	}
 	return nil
 }

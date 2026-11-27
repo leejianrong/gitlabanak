@@ -96,3 +96,18 @@ func TestMemoryModeWritesNothingToDisk(t *testing.T) {
 		t.Fatalf("memory mode left files behind: %v %v", entries, err)
 	}
 }
+
+func TestProjectPathSurvivesARestart(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "projects")
+	first := start(t, root)
+	if code, out := call(t, "POST", first.URL+"/_admin/projects", `{"id":101,"path":"team/app"}`); code != 201 {
+		t.Fatalf("create project: %d %s", code, out)
+	}
+	second := start(t, root)
+	if _, out := call(t, "GET", second.URL+"/api/v4/projects/101", ""); !strings.Contains(out, `"path_with_namespace":"team/app"`) {
+		t.Fatalf("path lost across restart: %s", out)
+	}
+	if code, _ := call(t, "GET", second.URL+"/team/app.git/info/refs?service=git-upload-pack", ""); code != 200 {
+		t.Fatalf("clone URL not served after restart: %d", code)
+	}
+}

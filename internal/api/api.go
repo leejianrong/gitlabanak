@@ -18,12 +18,14 @@ import (
 
 type Project struct {
 	ID            int
+	Path          string // namespace/name, used in clone URLs
 	DefaultBranch string
 	Store         *gitstore.Store
 }
 
 type ProjectSpec struct {
 	ID            int
+	Path          string
 	DefaultBranch string
 }
 
@@ -35,6 +37,7 @@ type Config struct {
 	Extra    []*Project  // already-open projects found on disk at start; reset removes them
 	NewStore func(id int, branch string) (*gitstore.Store, error)
 	WipeAll  func() error
+	SavePath func(id int, path string) error // keeps a project's clone path across restarts
 }
 
 type Server struct {
@@ -66,12 +69,19 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("DELETE "+files, s.changeFile(gitstore.Delete))
 	mux.HandleFunc("GET /api/v4/projects/{id}/repository/branches/{name...}", s.getBranch)
 	mux.HandleFunc("POST /api/v4/projects/{id}/repository/branches", s.createBranch)
+	mux.HandleFunc("GET /api/v4/projects/{id}/repository/commits", s.listCommits)
+	mux.HandleFunc("GET /api/v4/projects/{id}/repository/commits/{sha}", s.getCommit)
+	mux.HandleFunc("GET /api/v4/projects/{id}/repository/tree", s.getTree)
 	mux.HandleFunc("POST /_admin/reset", s.reset)
 	mux.HandleFunc("POST /_admin/projects", s.createProject)
 	mux.HandleFunc("GET /_admin/requests", s.listRequests)
 	mux.HandleFunc("GET /_admin/state", s.state)
 	// Anything else is an endpoint we have not built. Say so, and the request log shows who called it.
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { errs.NotImplemented.Write(w) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !s.gitHTTP(w, r) {
+			errs.NotImplemented.Write(w)
+		}
+	})
 	return recoverPanics(s.record(s.auth(mux))), nil
 }
 
@@ -89,13 +99,14 @@ func (s *Server) project(w http.ResponseWriter, r *http.Request) *Project {
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if p := s.project(w, r); p != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"id": p.ID, "default_branch": p.DefaultBranch})
+		writeJSON(w, http.StatusOK, map[string]any{"id": p.ID, "default_branch": p.DefaultBranch, "path_with_namespace": p.Path})
 	}
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" && !s.validToken(r) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitLab"`) // git only sends credentials after a challenge
 			errs.Unauthorized.Write(w)
 			return
 		}
@@ -107,6 +118,9 @@ func (s *Server) validToken(r *http.Request) bool {
 	got := r.Header.Get("PRIVATE-TOKEN")
 	if got == "" {
 		got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	if _, pass, ok := r.BasicAuth(); ok { // git: any username, the token as password
+		got = pass
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) == 1
 }
@@ -137,6 +151,6 @@ func (s *Server) load() error {
 	if err != nil {
 		return err
 	}
-	s.projects = map[int]*Project{s.cfg.Default.ID: {ID: s.cfg.Default.ID, DefaultBranch: s.cfg.Default.DefaultBranch, Store: st}}
+	s.projects = map[int]*Project{s.cfg.Default.ID: {ID: s.cfg.Default.ID, Path: s.cfg.Default.Path, DefaultBranch: s.cfg.Default.DefaultBranch, Store: st}}
 	return nil
 }

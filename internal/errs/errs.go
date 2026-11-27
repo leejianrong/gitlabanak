@@ -22,6 +22,8 @@ var (
 	FileMissing     = Err{http.StatusBadRequest, "message", "A file with this name doesn't exist"}
 	NotOnBranch     = Err{http.StatusBadRequest, "message", "You can only create or edit files when you are on a branch"}
 	InvalidPath     = Err{http.StatusBadRequest, "message", "Invalid file path"}
+	CommitNotFound  = Err{http.StatusNotFound, "message", "404 Commit Not Found"}
+	TreeNotFound    = Err{http.StatusNotFound, "message", "404 Tree Not Found"}
 	BranchNotFound  = Err{http.StatusNotFound, "message", "404 Branch Not Found"}
 	BranchExists    = Err{http.StatusBadRequest, "message", "Branch already exists"}
 	InvalidBranch   = Err{http.StatusBadRequest, "message", "Branch name is invalid"}
