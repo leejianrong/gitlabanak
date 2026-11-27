@@ -1,0 +1,12 @@
+{
+  "unauthorized":     {"status": 401, "body": {"message": "401 Unauthorized"},                                          "unverified": true},
+  "project_not_found":{"status": 404, "body": {"message": "404 Project Not Found"},                                     "unverified": true},
+  "file_not_found":   {"status": 404, "body": {"message": "404 File Not Found"},                                        "unverified": true},
+  "ref_missing":      {"status": 400, "body": {"error": "ref is missing"},                                              "unverified": true},
+  "branch_not_found": {"status": 404, "body": {"message": "404 Branch Not Found"},                                      "unverified": true},
+  "branch_exists":    {"status": 400, "body": {"message": "Branch already exists"},                                     "unverified": true},
+  "invalid_ref":      {"status": 400, "body": {"message": "Invalid reference name: {ref}"},                             "unverified": true},
+  "file_exists":      {"status": 400, "body": {"message": "A file with this name already exists"},                      "unverified": true},
+  "file_missing":     {"status": 400, "body": {"message": "A file with this name doesn't exist"},                       "unverified": true},
+  "not_on_branch":    {"status": 400, "body": {"message": "You can only create or edit files when you are on a branch"}, "unverified": true}
+}
