@@ -47,9 +47,10 @@ type linter struct {
 	res   Result
 	jobs  []job // in file order, includes after the including file
 	stage []string
-	seen  map[string]bool // top-level keys already taken, so the including file wins
-	deflt *yaml.Node      // the default: block
-	vars  *yaml.Node      // the top-level variables: block
+	seen  map[string]bool       // top-level keys already taken, so the including file wins
+	deflt *yaml.Node            // the default: block
+	vars  *yaml.Node            // the top-level variables: block
+	globs map[string]*yaml.Node // top-level image, services, before_script, after_script, cache: defaults in all but name
 }
 
 type job struct {
@@ -124,6 +125,11 @@ func (l *linter) load(m *yaml.Node, stack []string, depth int) {
 				l.deflt = v
 			case "variables":
 				l.vars = v
+			case "image", "services", "before_script", "after_script", "cache":
+				if l.globs == nil {
+					l.globs = map[string]*yaml.Node{}
+				}
+				l.globs[k] = v
 			}
 		default:
 			l.seen[k] = true

@@ -1,6 +1,6 @@
 # Spike: can an unmodified gitlab-runner talk to GitLabAnak?
 
-**Decision: go.** Registration and an empty job poll work against a handful of stub routes, so V7 (the runner executes jobs) stays as planned in ADR-0005. The hard part is still ahead: handing out a real job (`POST /jobs/request` with a body) and receiving traces and status updates. This spike did not touch those.
+**Decision: go.** Registration and an empty job poll worked against a handful of stub routes, so V7 went ahead as planned in ADR-0005. It then worked: see "Outcome" at the end.
 
 ## What was run
 
@@ -30,3 +30,7 @@ Four polls in nine seconds, all answered 204, and the runner logged no errors. `
 ## Reproduce
 
 Start the server with any `GITLAB_PRIVATE_TOKEN` of 8 or more characters, run the two commands above, and read `GET /_admin/requests`. A one-letter token also works but the request log's token redaction then mangles every letter of that kind in the logged body.
+
+## Outcome
+
+V7 built the rest and the same runner version ran real pipelines: it cloned over smart HTTP with `gitlab-ci-token:<job token>`, received `steps`, `variables`, `dependencies` and `git_info` in the job payload, streamed the trace with `PATCH /jobs/:id/trace`, uploaded artifacts with a multipart `POST /jobs/:id/artifacts`, downloaded them for the next stage with `GET /jobs/:id/artifacts`, and finished with `PUT /jobs/:id`. The request log showed no other routes. `git_info.depth` is 0 because the go-git server does not support shallow fetches.

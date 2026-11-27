@@ -92,6 +92,8 @@ func (s *Server) state(w http.ResponseWriter, _ *http.Request) {
 		Files   []file   `json:"files"`
 	}
 	out := map[string]any{}
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	for _, p := range ps {
 		snap, err := p.Store.Snapshot()
 		if err != nil {

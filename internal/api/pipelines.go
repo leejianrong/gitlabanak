@@ -26,15 +26,37 @@ type Pipeline struct {
 	Status             string
 	YamlErrors         string
 	CreatedAt          time.Time
+	Stages             []string
+	Vars               map[string]string // predefined variables plus variables: from the file
 	Jobs               []*PipelineJob
 }
 
+// PipelineJob is guarded by Server.runMu once it is published.
 type PipelineJob struct {
-	ID           int
-	Name, Stage  string
-	Status       string
-	Needs        []string
-	AllowFailure bool
+	ID                    int
+	Name, Stage           string
+	Status                string
+	Needs                 []string
+	AllowFailure          bool
+	When                  string
+	Config                map[string]any // after extends and default
+	Token                 string
+	Runner                int
+	Trace                 []byte
+	Artifact              *Artifact
+	StartedAt, FinishedAt time.Time
+}
+
+type Artifact struct {
+	Filename string
+	Data     []byte
+}
+
+// jobRef finds a job from its id.
+type jobRef struct {
+	project  *Project
+	pipeline *Pipeline
+	job      *PipelineJob
 }
 
 // pipelines is the per-project list. ids come from the server so they are unique across projects.
@@ -59,7 +81,7 @@ func (s *Server) onRefUpdate(p *Project, c gitstore.RefChange) {
 	if !ok || len(plan.Errors) == 0 && len(plan.Jobs) == 0 {
 		return
 	}
-	p.pipes.add(s.newPipeline(p, c.SHA, ref, isTag, "push", commit.CommittedAt, plan))
+	s.addPipeline(p, s.newPipeline(p, c.SHA, ref, isTag, "push", commit.CommittedAt, plan, s.predefined(p, commit, ref, isTag, "push")))
 }
 
 // plan reads the CI file at sha and expands it for ref. ok is false when there is no file.
@@ -93,8 +115,14 @@ func (s *Server) predefined(p *Project, c gitstore.CommitDetail, ref string, tag
 
 // newPipeline turns a plan into a pipeline: failed with yaml_errors when the plan has errors.
 // created_at is the commit time, not the wall clock, so repeated runs give identical output.
-func (s *Server) newPipeline(p *Project, sha, ref string, tag bool, source string, at time.Time, plan ci.Plan) *Pipeline {
-	pl := &Pipeline{ID: int(s.pipelineIDs.Add(1)), ProjectID: p.ID, SHA: sha, Ref: ref, Tag: tag, Source: source, Status: "pending", CreatedAt: at}
+func (s *Server) newPipeline(p *Project, sha, ref string, tag bool, source string, at time.Time, plan ci.Plan, predefined map[string]string) *Pipeline {
+	pl := &Pipeline{ID: int(s.pipelineIDs.Add(1)), ProjectID: p.ID, SHA: sha, Ref: ref, Tag: tag, Source: source, Status: "pending", CreatedAt: at, Stages: plan.Stages, Vars: map[string]string{}}
+	for k, v := range plan.Variables {
+		pl.Vars[k] = v
+	}
+	for k, v := range predefined {
+		pl.Vars[k] = v
+	}
 	if len(plan.Errors) > 0 {
 		pl.Status, pl.YamlErrors = "failed", strings.Join(plan.Errors, "\n")
 		return pl
@@ -111,16 +139,22 @@ func (s *Server) newPipeline(p *Project, sha, ref string, tag bool, source strin
 		case j.Stage == first && len(j.Needs) == 0:
 			status = "pending"
 		}
-		pl.Jobs = append(pl.Jobs, &PipelineJob{ID: int(s.jobIDs.Add(1)), Name: j.Name, Stage: j.Stage, Status: status, Needs: j.Needs, AllowFailure: j.AllowFailure})
+		pl.Jobs = append(pl.Jobs, &PipelineJob{ID: int(s.jobIDs.Add(1)), Name: j.Name, Stage: j.Stage, Status: status, Needs: j.Needs, AllowFailure: j.AllowFailure, When: j.When, Config: j.Config, Token: s.newToken()})
 	}
 	return pl
 }
 
-func (ps *pipelines) add(pl *Pipeline) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	pl.IID = len(ps.list) + 1
-	ps.list = append(ps.list, pl)
+// addPipeline publishes a pipeline: it gets its project-local number and its jobs become findable.
+func (s *Server) addPipeline(p *Project, pl *Pipeline) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	p.pipes.mu.Lock()
+	pl.IID = len(p.pipes.list) + 1
+	p.pipes.list = append(p.pipes.list, pl)
+	p.pipes.mu.Unlock()
+	for _, j := range pl.Jobs {
+		s.jobIndex[j.ID] = &jobRef{p, pl, j}
+	}
 }
 
 func (ps *pipelines) snapshot() []*Pipeline {
@@ -165,8 +199,8 @@ func jobJSON(r *http.Request, p *Project, pl *Pipeline, j *PipelineJob) map[stri
 	}
 	return map[string]any{
 		"id": j.ID, "status": j.Status, "stage": j.Stage, "name": j.Name, "ref": pl.Ref, "tag": pl.Tag,
-		"coverage": nil, "allow_failure": j.AllowFailure, "created_at": t, "started_at": nil, "finished_at": nil,
-		"duration": nil, "queued_duration": nil, "user": nil,
+		"coverage": nil, "allow_failure": j.AllowFailure, "created_at": t, "started_at": stamp(j.StartedAt), "finished_at": stamp(j.FinishedAt),
+		"duration": duration(j), "queued_duration": nil, "user": nil,
 		"pipeline": map[string]any{"id": pl.ID, "project_id": pl.ProjectID, "ref": pl.Ref, "sha": pl.SHA, "status": pl.Status},
 		"web_url":  "http://" + r.Host + "/" + p.Path + "/-/jobs/" + strconv.Itoa(j.ID),
 		"needs":    needs, // not in GitLab's jobs API; lets tests see the dependency graph
@@ -178,6 +212,8 @@ func (s *Server) listPipelines(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	q := r.URL.Query()
 	all := p.pipes.snapshot()
 	var match []*Pipeline
@@ -212,12 +248,16 @@ func (s *Server) pipelineOr404(w http.ResponseWriter, r *http.Request) (*Project
 }
 
 func (s *Server) getPipeline(w http.ResponseWriter, r *http.Request) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	if p, pl := s.pipelineOr404(w, r); pl != nil {
 		writeJSON(w, http.StatusOK, s.pipelineJSON(r, p, pl, true))
 	}
 }
 
 func (s *Server) pipelineJobs(w http.ResponseWriter, r *http.Request) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	p, pl := s.pipelineOr404(w, r)
 	if pl == nil {
 		return
@@ -268,7 +308,24 @@ func (s *Server) createPipeline(w http.ResponseWriter, r *http.Request) {
 		errs.WritePipelineBase(w, plan.Errors...)
 		return
 	}
-	pl := s.newPipeline(p, commit.ID, ref, false, "api", commit.CommittedAt, plan)
-	p.pipes.add(pl)
+	pl := s.newPipeline(p, commit.ID, ref, false, "api", commit.CommittedAt, plan, vars)
+	s.addPipeline(p, pl)
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	writeJSON(w, http.StatusCreated, s.pipelineJSON(r, p, pl, true))
+}
+
+// stamp formats a time, or null for the zero value.
+func stamp(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC().Format(gitlabTime)
+}
+
+func duration(j *PipelineJob) any {
+	if j.StartedAt.IsZero() || j.FinishedAt.IsZero() {
+		return nil
+	}
+	return j.FinishedAt.Sub(j.StartedAt).Seconds()
 }
