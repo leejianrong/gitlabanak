@@ -58,6 +58,21 @@ type Branch struct {
 	Message  string // of the head commit
 }
 
+type CommitInfo struct{ ID, Message string }
+
+type FileInfo struct {
+	Path string
+	Size int64
+}
+
+// BranchState is a debugging view of one branch: newest commit first, files by path.
+type BranchState struct {
+	Name    string
+	Head    string
+	Commits []CommitInfo
+	Files   []FileInfo
+}
+
 type Store struct {
 	mu   sync.Mutex // go-git's memory storage is not safe for concurrent use
 	repo *git.Repository
@@ -121,6 +136,49 @@ func (s *Store) Read(ref, path string) (File, error) {
 		return File{}, err
 	}
 	return File{Path: path, Content: []byte(body), BlobID: f.Hash.String(), CommitID: c.Hash.String(), LastCommitID: last.Hash.String()}, nil
+}
+
+// Snapshot lists every branch with its commits and files, ordered by branch name.
+func (s *Store) Snapshot() ([]BranchState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	branches, err := s.repo.Branches()
+	if err != nil {
+		return nil, err
+	}
+	var out []BranchState
+	err = branches.ForEach(func(ref *plumbing.Reference) error {
+		head, err := s.repo.CommitObject(ref.Hash())
+		if err != nil {
+			return err
+		}
+		st := BranchState{Name: ref.Name().Short(), Head: head.Hash.String()}
+		log, err := s.repo.Log(&git.LogOptions{From: head.Hash})
+		if err != nil {
+			return err
+		}
+		if err := log.ForEach(func(c *object.Commit) error {
+			st.Commits = append(st.Commits, CommitInfo{ID: c.Hash.String(), Message: c.Message})
+			return nil
+		}); err != nil {
+			return err
+		}
+		files, err := head.Files()
+		if err != nil {
+			return err
+		}
+		if err := files.ForEach(func(f *object.File) error {
+			st.Files = append(st.Files, FileInfo{Path: f.Name, Size: f.Size})
+			return nil
+		}); err != nil {
+			return err
+		}
+		sort.Slice(st.Files, func(i, j int) bool { return st.Files[i].Path < st.Files[j].Path })
+		out = append(out, st)
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, err
 }
 
 // Branch returns the head of a branch.

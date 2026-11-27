@@ -25,6 +25,8 @@ var (
 	BranchNotFound  = Err{http.StatusNotFound, "message", "404 Branch Not Found"}
 	BranchExists    = Err{http.StatusBadRequest, "message", "Branch already exists"}
 	InvalidBranch   = Err{http.StatusBadRequest, "message", "Branch name is invalid"}
+	NotImplemented  = Err{http.StatusNotImplemented, "message", "not implemented"}
+	TooLarge        = Err{http.StatusRequestEntityTooLarge, "message", "413 Request Entity Too Large"}
 )
 
 func InvalidRef(ref string) Err {
