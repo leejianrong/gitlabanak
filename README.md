@@ -2,7 +2,7 @@
 
 A small GitLab API stand-in backed by real git repositories. Point an application's integration tests at it instead of a full GitLab, with no network and a start time measured in milliseconds.
 
-**Status: early, pre-0.1.0.** Only the file endpoints work. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
+**Status: 0.1.0.** The file and branch endpoints work. The roadmap is in [`docs/PLAN.md`](docs/PLAN.md). This project is not affiliated with GitLab Inc.
 
 ## What works today
 
@@ -42,13 +42,17 @@ print(project.files.get(file_path="a/b.txt", ref="main").decode())
 
 `make demo` runs a longer version of this against the built binary.
 
+```sh
+docker run --rm -p 8080:8080 -e GITLAB_PRIVATE_TOKEN=secret ghcr.io/leejianrong/gitlabanak:0.1.0
+```
+
 In the container (non-root, so a new volume at `/data` is writable), keep data across restarts with `-e GITLAB_DATA_DIR=/data -v gitlabanak-data:/data`.
 
 ## Develop
 
 `make` lists the targets. `make ci` runs what CI runs: format, vet, lint, tidy check, tests with the race detector, and cross-compiles. Requires Go 1.26.11 or newer. See [`CLAUDE.md`](CLAUDE.md) for conventions and [`docs/adr/`](docs/adr/) for the decisions behind the design.
 
-Error texts follow the GitLab API documentation and are **not yet verified** against a real GitLab 19.2.9-ee server. A conformance suite to do that is planned (ADR-0003).
+Error texts follow the GitLab API documentation and are **not yet verified** against a real GitLab 19.2.9-ee server. The conformance suite in `conformance/` (`make conformance`) runs `python-gitlab` against the server and prints how many expected responses are still unverified (ADR-0003).
 
 ## Licence
 
