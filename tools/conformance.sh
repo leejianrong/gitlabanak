@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs the conformance suite against a freshly started GitLabAnak: the binary in bin/, or the
+# Runs a pytest suite (conformance by default, SUITE=examples/consumer for the consumer example) against a freshly started GitLabAnak: the binary in bin/, or the
 # container when IMAGE is set. Needs `uv`. To test a real GitLab instead, skip this script and run
 #   GITLAB_URL=... GITLAB_TOKEN=... GITLAB_PROJECT_ID=... uv run --with python-gitlab==8.2.0 --with pytest pytest conformance
 set -eu
@@ -19,4 +19,4 @@ until curl -sf "127.0.0.1:$port/health" >/dev/null; do
 	sleep 0.02
 done
 GITLAB_URL="http://127.0.0.1:$port" GITLAB_TOKEN=t0k GITLAB_PROJECT_ID=100 CONFORMANCE_ENFORCE_BASELINE=1 \
-	uv run --quiet --with python-gitlab==8.2.0 --with pytest pytest -q conformance
+	uv run --quiet --with python-gitlab==8.2.0 --with pytest pytest -q "${SUITE:-conformance}"

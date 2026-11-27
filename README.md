@@ -46,6 +46,10 @@ print(project.files.get(file_path="a/b.txt", ref="main").decode())
 docker run --rm -p 8080:8080 -e GITLAB_PRIVATE_TOKEN=secret ghcr.io/leejianrong/gitlabanak:0.1.0
 ```
 
+### Using it from your own tests
+
+Pin the image tag, not `latest`, so a new release never changes your results unannounced. Start the container before the tests and point `python-gitlab` at it (or in CI, run it as a service container). `examples/consumer/test_consumer.py` is a runnable example; `make consumer IMAGE=ghcr.io/leejianrong/gitlabanak:0.1.0` runs it against the published image. Call `POST /_admin/reset` between tests to start clean.
+
 In the container (non-root, so a new volume at `/data` is writable), keep data across restarts with `-e GITLAB_DATA_DIR=/data -v gitlabanak-data:/data`.
 
 ## Develop
