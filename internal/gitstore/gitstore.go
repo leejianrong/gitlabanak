@@ -9,10 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
@@ -78,9 +82,27 @@ type Store struct {
 	repo *git.Repository
 }
 
-// New creates a bare repository whose default branch holds one empty-tree commit.
+// New creates an in-memory bare repository whose default branch holds one empty-tree commit.
 func New(defaultBranch string) (*Store, error) {
-	st := memory.NewStorage()
+	return create(memory.NewStorage(), defaultBranch)
+}
+
+// Open keeps the repository on disk at path. It reopens one that is already there and
+// ignores defaultBranch in that case; otherwise it creates it as New does.
+func Open(path, defaultBranch string) (*Store, error) {
+	fs := osfs.New(path)
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	if _, err := fs.Stat("HEAD"); err == nil {
+		repo, err := git.Open(st, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &Store{repo: repo}, nil
+	}
+	return create(st, defaultBranch)
+}
+
+func create(st storage.Storer, defaultBranch string) (*Store, error) {
 	repo, err := git.Init(st, nil)
 	if err != nil {
 		return nil, err
@@ -102,6 +124,17 @@ func New(defaultBranch string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// DefaultBranch is the branch HEAD points at.
+func (s *Store) DefaultBranch() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	head, err := s.repo.Storer.Reference(plumbing.HEAD)
+	if err != nil {
+		return "", err
+	}
+	return head.Target().Short(), nil
 }
 
 // Read returns a file at ref, which may be a branch, tag or commit sha.

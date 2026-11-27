@@ -2,6 +2,7 @@ package gitstore
 
 import (
 	"errors"
+	"os/exec"
 	"sync"
 	"testing"
 
@@ -253,5 +254,65 @@ func TestCreateBranchErrors(t *testing.T) {
 	}
 	if _, err := s.Branch("nope"); !errors.Is(err, ErrBranchNotFound) {
 		t.Errorf("Branch(nope): %v", err)
+	}
+}
+
+func TestOpenReopensWithTheSameHistory(t *testing.T) {
+	dir := t.TempDir() + "/p.git"
+	s, err := Open(dir, "trunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := commit(t, s, "trunk", Create, "a/b.txt", "one")
+	if _, err := s.CreateBranch("feature", "trunk"); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := Open(dir, "ignored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := again.DefaultBranch(); b != "trunk" {
+		t.Errorf("default branch = %q, want trunk", b)
+	}
+	if f, err := again.Read("feature", "a/b.txt"); err != nil || f.CommitID != first {
+		t.Fatalf("after reopen: %v %+v", err, f)
+	}
+	// a commit after reopening has the id an uninterrupted run would give
+	second := commit(t, again, "trunk", Update, "a/b.txt", "two")
+	mem := mustNewBranch(t, "trunk")
+	commit(t, mem, "trunk", Create, "a/b.txt", "one")
+	if want := commit(t, mem, "trunk", Update, "a/b.txt", "two"); second != want {
+		t.Errorf("commit after reopen = %s, uninterrupted run gives %s", second, want)
+	}
+}
+
+func mustNewBranch(t *testing.T, branch string) *Store {
+	t.Helper()
+	s, err := New(branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// The repository on disk must be a valid git repository that real git accepts.
+func TestOnDiskRepositoryPassesGitFsck(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir() + "/p.git"
+	s, err := Open(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, s, "main", Create, "a/x", "one\n")
+	commit(t, s, "main", Create, "a.txt", "two\n")
+	commit(t, s, "main", Delete, "a/x", "")
+	for _, args := range [][]string{{"fsck", "--strict"}, {"rev-list", "--all"}} {
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 }

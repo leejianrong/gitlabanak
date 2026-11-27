@@ -76,10 +76,10 @@ func (s *Server) record(next http.Handler) http.Handler {
 			body = body[:logBodyMax]
 		}
 		clean := func(v string) string {
-			if s.token == "" {
+			if s.cfg.Token == "" {
 				return v
 			}
-			return strings.ReplaceAll(v, s.token, redacted)
+			return strings.ReplaceAll(v, s.cfg.Token, redacted)
 		}
 		s.log.add(loggedRequest{Method: r.Method, Path: clean(r.URL.Path), Query: clean(r.URL.RawQuery), Body: clean(string(body))})
 		next.ServeHTTP(w, r)

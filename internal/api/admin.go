@@ -6,22 +6,21 @@ import (
 	"strconv"
 
 	"github.com/leejianrong/gitlabanak/internal/errs"
-	"github.com/leejianrong/gitlabanak/internal/gitstore"
 )
 
 func (s *Server) reset(w http.ResponseWriter, _ *http.Request) {
-	projects := map[int]*Project{}
-	for _, p := range s.initial {
-		st, err := gitstore.New(p.DefaultBranch)
-		if err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cfg.WipeAll != nil {
+		if err := s.cfg.WipeAll(); err != nil {
 			errs.Internal(err.Error()).Write(w)
 			return
 		}
-		projects[p.ID] = &Project{ID: p.ID, DefaultBranch: p.DefaultBranch, Store: st}
 	}
-	s.mu.Lock()
-	s.projects = projects
-	s.mu.Unlock()
+	if err := s.load(); err != nil {
+		errs.Internal(err.Error()).Write(w)
+		return
+	}
 	s.log.clear()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -38,15 +37,15 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if in.DefaultBranch == "" {
 		in.DefaultBranch = "main"
 	}
-	st, err := gitstore.New(in.DefaultBranch)
-	if err != nil {
-		errs.Internal(err.Error()).Write(w)
-		return
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.projects[in.ID] != nil {
 		errs.BadRequest("project already exists").Write(w)
+		return
+	}
+	st, err := s.cfg.NewStore(in.ID, in.DefaultBranch)
+	if err != nil {
+		errs.Internal(err.Error()).Write(w)
 		return
 	}
 	s.projects[in.ID] = &Project{ID: in.ID, DefaultBranch: in.DefaultBranch, Store: st}

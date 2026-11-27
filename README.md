@@ -14,7 +14,7 @@ A small GitLab API stand-in backed by real git repositories. Point an applicatio
 - Test helpers under `/_admin` (same token): `POST /_admin/reset`, `POST /_admin/projects` (`{"id": 101, "default_branch": "main"}`), `GET /_admin/requests` (what clients sent, token redacted), `GET /_admin/state` (branches, commits and files).
 - Any other route answers `501 not implemented` and appears in the request log, so you can see what a client needs that is missing.
 
-Not built yet: persistence, clone and push, CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+Not built yet: clone and push, CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
 
 ## Run it
 
@@ -28,6 +28,7 @@ GITLAB_PRIVATE_TOKEN=secret bin/gitlabanak        # listens on :8080
 | `GITLAB_PRIVATE_TOKEN` | required | Sent by clients as `PRIVATE-TOKEN` (or `Authorization: Bearer`) |
 | `GITLAB_DEFAULT_PROJECT_ID` | `100` | The one project that exists at start |
 | `GITLAB_DEFAULT_BRANCH` | `main` | |
+| `GITLAB_DATA_DIR` | unset | If set, projects are kept as bare git repositories under `<dir>/projects/` and reopened at start. Unset means memory only, nothing written to disk |
 | `LISTEN_ADDR` | `:8080` | |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
@@ -40,6 +41,8 @@ print(project.files.get(file_path="a/b.txt", ref="main").decode())
 ```
 
 `make demo` runs a longer version of this against the built binary.
+
+In the container (non-root, so a new volume at `/data` is writable), keep data across restarts with `-e GITLAB_DATA_DIR=/data -v gitlabanak-data:/data`.
 
 ## Develop
 

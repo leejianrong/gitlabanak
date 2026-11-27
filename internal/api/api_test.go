@@ -6,20 +6,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/leejianrong/gitlabanak/internal/gitstore"
 )
 
 const token = "secret"
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	st, err := gitstore.New("main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(New(token, &Project{ID: 100, DefaultBranch: "main", Store: st}))
-	t.Cleanup(srv.Close)
+	srv, _ := fileServer(t)
 	return srv
 }
 
