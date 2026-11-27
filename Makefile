@@ -1,9 +1,10 @@
 .DEFAULT_GOAL := help
 
 BIN := bin
+IMAGE ?= gitlabanak:dev
 GOPKGDIRS = $(shell go list -f '{{.Dir}}' ./...)
 
-.PHONY: help fmtcheck vet lint tidycheck test build smoke demo xbuild vulncheck check ci hooks
+.PHONY: help fmtcheck vet lint tidycheck test build smoke demo image imagecheck conformance xbuild vulncheck check ci hooks
 
 help: ## list targets
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -33,6 +34,15 @@ smoke: build ## run the real binary on a free port and check the basics
 
 demo: build ## run python-gitlab against the binary twice and compare (needs uv)
 	tools/demo.sh
+
+image: ## build the container image
+	docker build -t $(IMAGE) .
+
+conformance: build ## run the conformance suite against the binary (IMAGE=... for the container)
+	tools/conformance.sh
+
+imagecheck: image ## check image size, user and start time
+	tools/imagecheck.sh $(IMAGE)
 
 xbuild: ## cross-compile linux amd64 and arm64
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/gitlabanak
