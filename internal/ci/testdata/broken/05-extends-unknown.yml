@@ -1,0 +1,4 @@
+# want: jobs:job extends unknown: .missing
+job:
+  extends: .missing
+  script: [x]

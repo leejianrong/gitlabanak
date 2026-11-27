@@ -32,4 +32,17 @@ if command -v git >/dev/null; then
 	rm -rf "$d"
 	echo "git clone and push ok"
 fi
+f=$(mktemp)
+printf 'stages: [build]\njob:\n  stage: deploy\n  needs: [ghost]\n  script: [x]\n' >"$f"
+if bin/gitlabanak lint "$f" >/dev/null; then echo "lint of a broken file should exit 1"; exit 1; fi
+cli=$(bin/gitlabanak lint --json "$f" || true)
+rest=$(python3 -c 'import json,sys; print(json.dumps({"content": open(sys.argv[1]).read()}))' "$f" |
+	curl -s -H 'PRIVATE-TOKEN: t0k' -H 'Content-Type: application/json' --data-binary @- "127.0.0.1:$port/api/v4/projects/100/ci/lint")
+python3 - "$cli" "$rest" <<'PY' || { echo "CLI and REST lint disagree"; exit 1; }
+import json, sys
+cli, rest = json.loads(sys.argv[1]), json.loads(sys.argv[2])
+assert cli["errors"] and (cli["valid"], cli["errors"], cli["warnings"]) == (rest["valid"], rest["errors"], rest["warnings"]), (cli, rest)
+PY
+rm -f "$f"
+echo "lint cli and rest agree"
 echo "smoke ok"

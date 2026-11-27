@@ -1,0 +1,12 @@
+stages: [build, test, deploy]
+build:
+  stage: build
+  script: [make]
+test:
+  stage: test
+  needs: [build]
+  script: [make test]
+deploy:
+  stage: deploy
+  script: [make deploy]
+  when: manual

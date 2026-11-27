@@ -1,0 +1,4 @@
+# want: jobs:build config should implement the script:, run:, or trigger: keyword
+build:
+  stage: build
+  image: alpine

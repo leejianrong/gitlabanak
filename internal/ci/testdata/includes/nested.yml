@@ -1,0 +1,3 @@
+include: /includes/base.yml
+.more:
+  script: [more]
