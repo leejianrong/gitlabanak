@@ -197,3 +197,61 @@ func TestConcurrentCommitsAreSerialised(t *testing.T) {
 		}
 	}
 }
+
+func TestBranchStartsAsACopyAndStaysSeparate(t *testing.T) {
+	s := mustNew(t)
+	commit(t, s, "main", Create, "shared.txt", "v1")
+	if _, err := s.CreateBranch("feature", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := s.Read("feature", "shared.txt"); err != nil || string(f.Content) != "v1" {
+		t.Fatalf("feature should start with main's files: %v %q", err, f.Content)
+	}
+	commit(t, s, "feature", Create, "only-feature.txt", "f")
+	commit(t, s, "main", Update, "shared.txt", "v2")
+	if _, err := s.Read("main", "only-feature.txt"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a commit on feature reached main: %v", err)
+	}
+	if f, _ := s.Read("feature", "shared.txt"); string(f.Content) != "v1" {
+		t.Errorf("a commit on main reached feature: %q", f.Content)
+	}
+}
+
+func TestCreateBranchFromShaAndTag(t *testing.T) {
+	s := mustNew(t)
+	first := commit(t, s, "main", Create, "a.txt", "1")
+	commit(t, s, "main", Create, "b.txt", "2")
+	if _, err := s.repo.CreateTag("v1", plumbing.NewHash(first), nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{first, "v1"} {
+		name := "from-" + ref[:2]
+		b, err := s.CreateBranch(name, ref)
+		if err != nil || b.CommitID != first {
+			t.Fatalf("%s: %v head %s, want %s", ref, err, b.CommitID, first)
+		}
+		if _, err := s.Read(name, "b.txt"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: later file leaked into the branch: %v", ref, err)
+		}
+	}
+}
+
+func TestCreateBranchErrors(t *testing.T) {
+	s := mustNew(t)
+	for name, tc := range map[string]struct {
+		branch, ref string
+		want        error
+	}{
+		"duplicate":   {"main", "main", ErrBranchExists},
+		"missing ref": {"x", "nope", ErrRefNotFound},
+		"bad name":    {"a..b", "main", ErrInvalidBranch},
+		"empty name":  {"", "main", ErrInvalidBranch},
+	} {
+		if _, err := s.CreateBranch(tc.branch, tc.ref); !errors.Is(err, tc.want) {
+			t.Errorf("%s: %v, want %v", name, err, tc.want)
+		}
+	}
+	if _, err := s.Branch("nope"); !errors.Is(err, ErrBranchNotFound) {
+		t.Errorf("Branch(nope): %v", err)
+	}
+}

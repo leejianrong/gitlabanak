@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/leejianrong/gitlabanak/internal/errs"
 	"github.com/leejianrong/gitlabanak/internal/gitstore"
@@ -22,7 +23,11 @@ type Project struct {
 }
 
 type Server struct {
-	token    string
+	token   string
+	initial []Project // what reset rebuilds
+	log     requestLog
+
+	mu       sync.RWMutex
 	projects map[int]*Project
 }
 
@@ -31,6 +36,7 @@ func New(token string, projects ...*Project) http.Handler {
 	s := &Server{token: token, projects: map[int]*Project{}}
 	for _, p := range projects {
 		s.projects[p.ID] = p
+		s.initial = append(s.initial, Project{ID: p.ID, DefaultBranch: p.DefaultBranch})
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -42,12 +48,22 @@ func New(token string, projects ...*Project) http.Handler {
 	mux.HandleFunc("POST "+files, s.changeFile(gitstore.Create))
 	mux.HandleFunc("PUT "+files, s.changeFile(gitstore.Update))
 	mux.HandleFunc("DELETE "+files, s.changeFile(gitstore.Delete))
-	return recoverPanics(s.auth(mux))
+	mux.HandleFunc("GET /api/v4/projects/{id}/repository/branches/{name...}", s.getBranch)
+	mux.HandleFunc("POST /api/v4/projects/{id}/repository/branches", s.createBranch)
+	mux.HandleFunc("POST /_admin/reset", s.reset)
+	mux.HandleFunc("POST /_admin/projects", s.createProject)
+	mux.HandleFunc("GET /_admin/requests", s.listRequests)
+	mux.HandleFunc("GET /_admin/state", s.state)
+	// Anything else is an endpoint we have not built. Say so, and the request log shows who called it.
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { errs.NotImplemented.Write(w) })
+	return recoverPanics(s.record(s.auth(mux)))
 }
 
 func (s *Server) project(w http.ResponseWriter, r *http.Request) *Project {
 	id, err := strconv.Atoi(r.PathValue("id"))
+	s.mu.RLock()
 	p := s.projects[id]
+	s.mu.RUnlock()
 	if err != nil || p == nil {
 		errs.ProjectNotFound.Write(w)
 		return nil

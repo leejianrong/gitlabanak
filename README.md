@@ -8,10 +8,13 @@ A small GitLab API stand-in backed by real git repositories. Point an applicatio
 
 - `GET /health`
 - `GET /api/v4/projects/:id`
-- Repository files on the default branch: read, create, update and delete, through `python-gitlab` or plain HTTP.
+- Repository files on any branch: read, create, update and delete, through `python-gitlab` or plain HTTP.
+- Branches: create from a branch, tag or commit sha, and look one up. A new branch starts as a copy of its `ref`, and a commit on one branch leaves the others alone.
 - Every change is a real git commit. Commit ids are deterministic: the same requests in the same order give the same ids on a fresh server.
+- Test helpers under `/_admin` (same token): `POST /_admin/reset`, `POST /_admin/projects` (`{"id": 101, "default_branch": "main"}`), `GET /_admin/requests` (what clients sent, token redacted), `GET /_admin/state` (branches, commits and files).
+- Any other route answers `501 not implemented` and appears in the request log, so you can see what a client needs that is missing.
 
-Not built yet: branches, the admin API, clone and push, CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
+Not built yet: persistence, clone and push, CI lint and pipelines. See [`docs/SLICES.md`](docs/SLICES.md) for the order.
 
 ## Run it
 

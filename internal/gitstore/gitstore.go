@@ -22,6 +22,8 @@ var (
 	ErrRefNotFound    = errors.New("ref not found")
 	ErrBranchNotFound = errors.New("branch not found")
 	ErrInvalidPath    = errors.New("invalid file path")
+	ErrBranchExists   = errors.New("branch already exists")
+	ErrInvalidBranch  = errors.New("invalid branch name")
 )
 
 // Commit ids must be reproducible, so time comes from history rather than the clock.
@@ -48,6 +50,27 @@ type File struct {
 	BlobID       string
 	CommitID     string // the commit ref points at
 	LastCommitID string // the latest commit that changed this file
+}
+
+type Branch struct {
+	Name     string
+	CommitID string
+	Message  string // of the head commit
+}
+
+type CommitInfo struct{ ID, Message string }
+
+type FileInfo struct {
+	Path string
+	Size int64
+}
+
+// BranchState is a debugging view of one branch: newest commit first, files by path.
+type BranchState struct {
+	Name    string
+	Head    string
+	Commits []CommitInfo
+	Files   []FileInfo
 }
 
 type Store struct {
@@ -113,6 +136,90 @@ func (s *Store) Read(ref, path string) (File, error) {
 		return File{}, err
 	}
 	return File{Path: path, Content: []byte(body), BlobID: f.Hash.String(), CommitID: c.Hash.String(), LastCommitID: last.Hash.String()}, nil
+}
+
+// Snapshot lists every branch with its commits and files, ordered by branch name.
+func (s *Store) Snapshot() ([]BranchState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	branches, err := s.repo.Branches()
+	if err != nil {
+		return nil, err
+	}
+	var out []BranchState
+	err = branches.ForEach(func(ref *plumbing.Reference) error {
+		head, err := s.repo.CommitObject(ref.Hash())
+		if err != nil {
+			return err
+		}
+		st := BranchState{Name: ref.Name().Short(), Head: head.Hash.String()}
+		log, err := s.repo.Log(&git.LogOptions{From: head.Hash})
+		if err != nil {
+			return err
+		}
+		if err := log.ForEach(func(c *object.Commit) error {
+			st.Commits = append(st.Commits, CommitInfo{ID: c.Hash.String(), Message: c.Message})
+			return nil
+		}); err != nil {
+			return err
+		}
+		files, err := head.Files()
+		if err != nil {
+			return err
+		}
+		if err := files.ForEach(func(f *object.File) error {
+			st.Files = append(st.Files, FileInfo{Path: f.Name, Size: f.Size})
+			return nil
+		}); err != nil {
+			return err
+		}
+		sort.Slice(st.Files, func(i, j int) bool { return st.Files[i].Path < st.Files[j].Path })
+		out = append(out, st)
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, err
+}
+
+// Branch returns the head of a branch.
+func (s *Store) Branch(name string) (Branch, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.branch(name)
+}
+
+func (s *Store) branch(name string) (Branch, error) {
+	ref, err := s.repo.Reference(plumbing.NewBranchReferenceName(name), true)
+	if err != nil {
+		return Branch{}, ErrBranchNotFound
+	}
+	c, err := s.repo.CommitObject(ref.Hash())
+	if err != nil {
+		return Branch{}, err
+	}
+	return Branch{Name: name, CommitID: c.Hash.String(), Message: c.Message}, nil
+}
+
+// CreateBranch points a new branch at ref, which may be a branch, tag or commit sha.
+// The new branch sees the files ref had, and later commits on either stay separate.
+func (s *Store) CreateBranch(name, ref string) (Branch, error) {
+	refName := plumbing.NewBranchReferenceName(name)
+	if name == "" || refName.Validate() != nil {
+		return Branch{}, ErrInvalidBranch
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.repo.Reference(refName, true); err == nil {
+		return Branch{}, ErrBranchExists
+	}
+	h, err := s.repo.ResolveRevision(plumbing.Revision(ref))
+	if err != nil {
+		return Branch{}, ErrRefNotFound
+	}
+	if err := s.repo.Storer.SetReference(plumbing.NewHashReference(refName, *h)); err != nil {
+		return Branch{}, err
+	}
+	return s.branch(name)
 }
 
 // Commit applies one change on branch and returns the new commit id.

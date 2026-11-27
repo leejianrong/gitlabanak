@@ -22,7 +22,20 @@ var (
 	FileMissing     = Err{http.StatusBadRequest, "message", "A file with this name doesn't exist"}
 	NotOnBranch     = Err{http.StatusBadRequest, "message", "You can only create or edit files when you are on a branch"}
 	InvalidPath     = Err{http.StatusBadRequest, "message", "Invalid file path"}
+	BranchNotFound  = Err{http.StatusNotFound, "message", "404 Branch Not Found"}
+	BranchExists    = Err{http.StatusBadRequest, "message", "Branch already exists"}
+	InvalidBranch   = Err{http.StatusBadRequest, "message", "Branch name is invalid"}
+	NotImplemented  = Err{http.StatusNotImplemented, "message", "not implemented"}
+	TooLarge        = Err{http.StatusRequestEntityTooLarge, "message", "413 Request Entity Too Large"}
 )
+
+func InvalidRef(ref string) Err {
+	return Err{http.StatusBadRequest, "message", "Invalid reference name: " + ref}
+}
+
+func Missing(field string) Err {
+	return Err{http.StatusBadRequest, "error", field + " is missing"}
+}
 
 func BadRequest(text string) Err {
 	return Err{http.StatusBadRequest, "message", text}
