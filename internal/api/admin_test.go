@@ -194,3 +194,18 @@ func TestConcurrentWritersLeaveALinearHistory(t *testing.T) {
 		t.Fatalf("commits %d (want %d), files %d (want %d)", len(b.Commits), n+1, len(b.Files), n)
 	}
 }
+
+func TestRunnerRegistrationAndPollingStub(t *testing.T) {
+	srv := newServer(t)
+	// No PRIVATE-TOKEN: runners authenticate with their own token in the body.
+	code, body := do(t, "POST", srv.URL+"/api/v4/runners/verify", nil, `{"token":"glrt-abc","system_id":"r_1"}`)
+	if code != 200 || body["token"] != "glrt-abc" {
+		t.Fatalf("verify: %d %v", code, body)
+	}
+	if code, _ := do(t, "POST", srv.URL+"/api/v4/runners/verify", nil, `{}`); code != 403 {
+		t.Fatalf("verify without a token: %d", code)
+	}
+	if code, _ := do(t, "POST", srv.URL+"/api/v4/jobs/request", nil, `{"token":"glrt-abc"}`); code != 204 {
+		t.Fatalf("poll: %d", code)
+	}
+}

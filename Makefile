@@ -4,7 +4,7 @@ BIN := bin
 IMAGE ?= gitlabanak:dev
 GOPKGDIRS = $(shell go list -f '{{.Dir}}' ./...)
 
-.PHONY: help fmtcheck vet lint tidycheck test build smoke demo image imagecheck conformance consumer xbuild vulncheck check ci hooks
+.PHONY: help fmtcheck vet lint tidycheck test build smoke demo image imagecheck runnercheck conformance consumer xbuild vulncheck check ci hooks
 
 help: ## list targets
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -43,6 +43,9 @@ conformance: build ## run the conformance suite against the binary (IMAGE=... fo
 
 consumer: build ## run the consumer example against the binary (IMAGE=... for the container)
 	SUITE=examples/consumer tools/conformance.sh
+
+runnercheck: image ## register the real gitlab-runner against the image and see it poll (needs docker)
+	tools/runnercheck.sh $(IMAGE)
 
 imagecheck: image ## check image size, user and start time
 	tools/imagecheck.sh $(IMAGE)
